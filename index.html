@@ -202,10 +202,21 @@ const CONNECTIONS = [
 ];
 
 // ---------- Geometry helpers (2D, using normalized x/y) ----------
+// IMPORTANT: MediaPipe landmarks are normalized separately by frame width (x)
+// and frame height (y). Camera frames are almost never square (a phone in
+// portrait mode might be 720x1280, a laptop webcam 4:3 or 16:9), so a raw
+// dx/dy comparison silently distorts every angle — this was making "Spine
+// tall & vertical" and similar checks read wrong. frameAspect() converts
+// y into the same units as x (width-relative) before any angle math.
+function frameAspect() {
+  const w = video.videoWidth, h = video.videoHeight;
+  return (w && h) ? (w / h) : (4 / 3);
+}
 function angle(a, b, c) {
   // angle at point b, in degrees, formed by a-b-c
-  const v1x = a.x - b.x, v1y = a.y - b.y;
-  const v2x = c.x - b.x, v2y = c.y - b.y;
+  const AR = frameAspect();
+  const v1x = a.x - b.x, v1y = (a.y - b.y) / AR;
+  const v2x = c.x - b.x, v2y = (c.y - b.y) / AR;
   const dot = v1x * v2x + v1y * v2y;
   const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
   if (m1 === 0 || m2 === 0) return 0;
@@ -217,11 +228,13 @@ function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 // verticality of segment a->b: 0deg = perfectly vertical
 function tiltFromVertical(a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
+  const AR = frameAspect();
+  const dx = b.x - a.x, dy = (b.y - a.y) / AR;
   return Math.abs(Math.atan2(dx, dy) * 180 / Math.PI); // angle from vertical axis
 }
 function tiltFromHorizontal(a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
+  const AR = frameAspect();
+  const dx = b.x - a.x, dy = (b.y - a.y) / AR;
   return Math.abs(Math.atan2(dy, dx) * 180 / Math.PI); // 0 = horizontal
 }
 
@@ -562,8 +575,40 @@ function loop() {
 }
 
 // ---------- Drawing ----------
+// The canvas is displayed mirrored (CSS scaleX(-1) on #overlay, to match the
+// mirrored video), so any text drawn normally would appear backwards. This
+// draws text with a counter-flip so it reads correctly on screen.
+function drawMirroredText(text, x, y, color, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(-1, 1);
+  ctx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
+// Per-pose tolerance for the spine/torso vertical-tilt guide (mirrors the
+// thresholds used by each pose's own cue, just kept in one place for drawing).
+const SPINE_TOLERANCE_DEG = { mountain: 10, tree: 14, warrior2: 18 };
+
 function drawSkeleton(lm) {
   const W = canvas.width, H = canvas.height;
+
+  // 1) Vertical center guide — helps you frame/center yourself in the shot.
+  ctx.save();
+  ctx.setLineDash([6, 8]);
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = Math.max(1.5, W * 0.0025);
+  ctx.beginPath();
+  ctx.moveTo(W / 2, 0);
+  ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.restore();
+
+  // 2) Skeleton connections + joint dots (unchanged).
   ctx.lineWidth = Math.max(3, W * 0.006);
   ctx.strokeStyle = "rgba(88,166,255,0.9)";
   ctx.fillStyle = "#3fb950";
@@ -579,6 +624,73 @@ function drawSkeleton(lm) {
     ctx.arc(lm[i].x * W, lm[i].y * H, r, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // 3) Shoulder-level and hip-level guides — dashed horizontal lines that
+  // turn green when level, orange when they're not, so you can see which
+  // side to lower/raise without reading the checklist.
+  const shoulderMid = mid(lm[L.lShoulder], lm[L.rShoulder]);
+  const hipMid = mid(lm[L.lHip], lm[L.rHip]);
+  const shoulderLevel = Math.abs(lm[L.lShoulder].y - lm[L.rShoulder].y) < 0.04;
+  const hipLevel = Math.abs(lm[L.lHip].y - lm[L.rHip].y) < 0.05;
+  [
+    { y: shoulderMid.y * H, ok: shoulderLevel },
+    { y: hipMid.y * H, ok: hipLevel },
+  ].forEach(({ y, ok }) => {
+    ctx.save();
+    ctx.setLineDash([5, 6]);
+    ctx.strokeStyle = ok ? "rgba(63,185,80,0.55)" : "rgba(240,136,62,0.65)";
+    ctx.lineWidth = Math.max(1.5, W * 0.003);
+    ctx.beginPath();
+    ctx.moveTo(W * 0.08, y);
+    ctx.lineTo(W * 0.92, y);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // 4) Spine indicator — the actual measurement behind "Spine tall &
+  // vertical" / "Torso upright", drawn directly on screen: a dashed true
+  // vertical from the hip, the real hip->shoulder line colored by whether
+  // it's within tolerance, bright markers at both points, and the live
+  // tilt angle in degrees so you can see exactly how far off you are.
+  const hipPx = { x: hipMid.x * W, y: hipMid.y * H };
+  const shoulderPx = { x: shoulderMid.x * W, y: shoulderMid.y * H };
+  const tiltDeg = tiltFromVertical(hipMid, shoulderMid);
+  const tolerance = SPINE_TOLERANCE_DEG[currentPose] ?? 12;
+  const spineOk = tiltDeg < tolerance;
+  const spineColor = spineOk ? "#3fb950" : "#f0883e";
+
+  ctx.save();
+  ctx.setLineDash([4, 5]);
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = Math.max(1.5, W * 0.003);
+  ctx.beginPath();
+  ctx.moveTo(hipPx.x, hipPx.y);
+  ctx.lineTo(hipPx.x, shoulderPx.y);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+  ctx.strokeStyle = spineColor;
+  ctx.lineWidth = Math.max(4, W * 0.008);
+  ctx.beginPath();
+  ctx.moveTo(hipPx.x, hipPx.y);
+  ctx.lineTo(shoulderPx.x, shoulderPx.y);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = "#ffd166";
+  [hipPx, shoulderPx].forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(6, W * 0.012), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  drawMirroredText(
+    `${tiltDeg.toFixed(0)}°`,
+    (hipPx.x + shoulderPx.x) / 2 - W * 0.06,
+    (hipPx.y + shoulderPx.y) / 2,
+    spineColor,
+    Math.max(14, Math.round(W * 0.022))
+  );
 }
 
 // ---------- Voice coaching (Web Speech API — built in, offline) ----------
@@ -611,7 +723,7 @@ function cleanForSpeech(s) {
     .replace(/°/g, " degrees")
     .replace(/~/g, "about ")
     .replace(/[()]/g, "")
-    .replace(/s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
