@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+<title>Yoga Teacher — Pose Coach</title>
+<!-- iPad / iPhone: allow full-screen "Add to Home Screen" app feel -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Yoga Teacher" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0e1116" />
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c232d;
+    --text: #e6edf3;
+    --muted: #9aa7b4;
+    --good: #3fb950;
+    --bad: #f0883e;
+    --accent: #58a6ff;
+    --line: #2b3440;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  header .tag { color: var(--muted); font-size: 13px; }
+  .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+    gap: 18px;
+    padding: 18px 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--line);
+  }
+  #video, #overlay {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1); /* mirror like a real mirror */
+  }
+  #video { object-fit: cover; }
+  .stage .placeholder {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; text-align: center; padding: 24px;
+    color: var(--muted);
+  }
+  .stage .placeholder.hidden { display: none; }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 14px; font-size: 14px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #06101f; border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .pose-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pose-picker button.active { border-color: var(--accent); background: #14263f; }
+  #voiceBtn.voice-on { border-color: var(--good); background: rgba(63,185,80,.16); color: var(--good); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 16px 18px;
+  }
+  .panel h2 { margin: 0 0 4px; font-size: 15px; }
+  .panel .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+
+  .score-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .score-ring {
+    --pct: 0;
+    width: 76px; height: 76px; border-radius: 50%;
+    background:
+      radial-gradient(closest-side, var(--panel) 74%, transparent 75% 100%),
+      conic-gradient(var(--good) calc(var(--pct) * 1%), var(--line) 0);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 20px; flex: 0 0 auto;
+  }
+  .score-label { color: var(--muted); font-size: 13px; }
+  .score-label strong { color: var(--text); font-size: 15px; display: block; }
+
+  ul.cues { list-style: none; margin: 0; padding: 0; }
+  ul.cues li {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px;
+  }
+  ul.cues li:first-child { border-top: none; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .dot.good { background: rgba(63,185,80,.16); color: var(--good); }
+  .dot.bad  { background: rgba(240,136,62,.16); color: var(--bad); }
+  .dot.idle { background: rgba(154,167,180,.14); color: var(--muted); }
+  .cue-text .msg { color: var(--muted); font-size: 12.5px; display: block; margin-top: 1px; }
+
+  .status { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+  .status.err { color: var(--bad); }
+  a { color: var(--accent); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧘 Yoga Teacher</h1>
+  <span class="tag">Live posture coaching from your webcam — everything runs locally in your browser.</span>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="placeholder" id="placeholder">
+        <div style="font-size:40px">📷</div>
+        <div>Click <strong>Start camera</strong> and allow camera access.<br>Stand back far enough that your whole body is visible.</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="primary">Start camera</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="voiceBtn" title="Speak corrections out loud">🔊 Voice coaching: off</button>
+    </div>
+
+    <div class="controls pose-picker" id="posePicker"></div>
+    <div class="status" id="status"></div>
+    <div class="hint">
+      Tip: place your device so the camera sees you head-to-toe. Good, even lighting and a plain background help the tracker.
+      Nothing you see here is uploaded — the video and pose detection stay on your machine.
+      <br><br><strong>🔊 Voice coaching:</strong> click the button to have the app speak your corrections aloud —
+      handy when you're in a pose and can't look at the screen. It speaks the most important fix first,
+      waits a few seconds between cues so it isn't chatty, and praises you when your alignment is good.
+      <br><br><strong>If you see a "model couldn't download" message:</strong> the app needs to fetch the pose model from the internet once.
+      Some networks/firewalls block this when the file is opened directly. The reliable fix is to serve the file from a tiny local server:
+      open a terminal in the folder with this file and run <code>python3 -m http.server 8000</code>, then visit
+      <code>http://localhost:8000/yoga-teacher.html</code> in Chrome.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 id="poseName">Mountain Pose</h2>
+    <div class="sub" id="poseDesc">Stand tall and grounded.</div>
+
+    <div class="score-wrap">
+      <div class="score-ring" id="ring" style="--pct:0">—</div>
+      <div class="score-label">
+        <strong id="scoreText">Waiting…</strong>
+        Alignment score
+      </div>
+    </div>
+
+    <ul class="cues" id="cues"></ul>
+  </div>
+</div>
+
+<script type="module">
+import {
+  FilesetResolver,
+  PoseLandmarker
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12";
+
+// ---------- Landmark indices (MediaPipe Pose, 33 points) ----------
+const L = {
+  nose: 0,
+  lShoulder: 11, rShoulder: 12,
+  lElbow: 13, rElbow: 14,
+  lWrist: 15, rWrist: 16,
+  lHip: 23, rHip: 24,
+  lKnee: 25, rKnee: 26,
+  lAnkle: 27, rAnkle: 28,
+};
+
+// Skeleton connections for drawing
+const CONNECTIONS = [
+  [11,12],[11,13],[13,15],[12,14],[14,16],
+  [11,23],[12,24],[23,24],
+  [23,25],[25,27],[24,26],[26,28]
+];
+
+// ---------- Geometry helpers (2D, using normalized x/y) ----------
+function angle(a, b, c) {
+  // angle at point b, in degrees, formed by a-b-c
+  const v1x = a.x - b.x, v1y = a.y - b.y;
+  const v2x = c.x - b.x, v2y = c.y - b.y;
+  const dot = v1x * v2x + v1y * v2y;
+  const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
+  if (m1 === 0 || m2 === 0) return 0;
+  let cos = dot / (m1 * m2);
+  cos = Math.max(-1, Math.min(1, cos));
+  return Math.acos(cos) * 180 / Math.PI;
+}
+function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+// verticality of segment a->b: 0deg = perfectly vertical
+function tiltFromVertical(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return Math.abs(Math.atan2(dx, dy) * 180 / Math.PI); // angle from vertical axis
+}
+function tiltFromHorizontal(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return Math.abs(Math.atan2(dy, dx) * 180 / Math.PI); // 0 = horizontal
+}
+
+// Score a value that should sit inside [lo, hi], degrading past a soft margin
+function within(value, lo, hi) { return value >= lo && value <= hi; }
+
+// ---------- Pose definitions ----------
+// Each cue returns { ok:boolean, msg:string } evaluated against landmarks (lm).
+const POSES = {
+  mountain: {
+    name: "Mountain Pose",
+    sanskrit: "Tadasana",
+    desc: "Stand tall, feet grounded, arms relaxed at your sides, spine long.",
+    cues: [
+      {
+        label: "Spine tall & vertical",
+        test: (lm) => {
+          const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+          return { ok: t < 10, msg: t < 10 ? "Nicely stacked." : "Lengthen up — you're leaning to one side." };
+        }
+      },
+      {
+        label: "Shoulders level",
+        test: (lm) => {
+          const d = Math.abs(lm[L.lShoulder].y - lm[L.rShoulder].y);
+          return { ok: d < 0.04, msg: d < 0.04 ? "Even and relaxed." : "Drop the raised shoulder to level them." };
+        }
+      },
+      {
+        label: "Hips level",
+        test: (lm) => {
+          const d = Math.abs(lm[L.lHip].y - lm[L.rHip].y);
+          return { ok: d < 0.04, msg: d < 0.04 ? "Weight is even." : "Balance your weight evenly on both feet." };
+        }
+      },
+      {
+        label: "Legs straight",
+        test: (lm) => {
+          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
+          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          const ok = lk > 160 && rk > 160;
+          return { ok, msg: ok ? "Strong, straight legs." : "Gently straighten your knees." };
+        }
+      },
+    ]
+  },
+
+  tree: {
+    name: "Tree Pose",
+    sanskrit: "Vrksasana",
+    desc: "Balance on one leg; place the other foot on your inner thigh or calf. Grow tall.",
+    cues: [
+      {
+        label: "Standing on one leg",
+        test: (lm) => {
+          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
+          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          // one leg fairly straight (standing), the other clearly bent
+          const straight = Math.max(lk, rk);
+          const bent = Math.min(lk, rk);
+          const ok = straight > 160 && bent < 130;
+          return { ok, msg: ok ? "Good — one leg lifted." : "Lift one foot and rest it against the standing leg." };
+        }
+      },
+      {
+        label: "Standing leg strong",
+        test: (lm) => {
+          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
+          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          const straight = Math.max(lk, rk);
+          return { ok: straight > 168, msg: straight > 168 ? "Rooted and steady." : "Press down and straighten the standing leg." };
+        }
+      },
+      {
+        label: "Hips level & balanced",
+        test: (lm) => {
+          const d = Math.abs(lm[L.lHip].y - lm[L.rHip].y);
+          return { ok: d < 0.06, msg: d < 0.06 ? "Steady hips." : "Level the hips — don't jut one out." };
+        }
+      },
+      {
+        label: "Arms lifted overhead",
+        test: (lm) => {
+          const wristsUp = lm[L.lWrist].y < lm[L.nose].y && lm[L.rWrist].y < lm[L.nose].y;
+          return { ok: wristsUp, msg: wristsUp ? "Reaching up like branches." : "Raise both hands overhead (or to heart center)." };
+        }
+      },
+      {
+        label: "Torso upright",
+        test: (lm) => {
+          const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+          return { ok: t < 14, msg: t < 14 ? "Tall and centered." : "Stack your chest over your hips." };
+        }
+      },
+    ]
+  },
+
+  warrior2: {
+    name: "Warrior II",
+    sanskrit: "Virabhadrasana II",
+    desc: "Wide stance, front knee bent toward 90°, back leg straight, arms reaching out level with the floor.",
+    cues: [
+      {
+        label: "Front knee bent (~90°)",
+        test: (lm) => {
+          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
+          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          const front = Math.min(lk, rk); // the more-bent leg
+          const ok = within(front, 80, 120);
+          return { ok, msg: ok ? "Deep, strong lunge." : (front > 120 ? "Bend the front knee more toward 90°." : "Ease up — don't let the knee pass the ankle.") };
+        }
+      },
+      {
+        label: "Back leg straight",
+        test: (lm) => {
+          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
+          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          const back = Math.max(lk, rk);
+          return { ok: back > 155, msg: back > 155 ? "Strong back leg." : "Straighten and energize the back leg." };
+        }
+      },
+      {
+        label: "Arms level with floor",
+        test: (lm) => {
+          const tL = tiltFromHorizontal(lm[L.lShoulder], lm[L.lWrist]);
+          const tR = tiltFromHorizontal(lm[L.rShoulder], lm[L.rWrist]);
+          const ok = tL < 20 && tR < 20;
+          return { ok, msg: ok ? "Arms floating, parallel to the floor." : "Lift both arms to shoulder height, reaching out." };
+        }
+      },
+      {
+        label: "Arms extended",
+        test: (lm) => {
+          const le = angle(lm[L.lShoulder], lm[L.lElbow], lm[L.lWrist]);
+          const re = angle(lm[L.rShoulder], lm[L.rElbow], lm[L.rWrist]);
+          const ok = le > 155 && re > 155;
+          return { ok, msg: ok ? "Long through the fingertips." : "Straighten the elbows and reach wide." };
+        }
+      },
+      {
+        label: "Torso upright",
+        test: (lm) => {
+          const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+          return { ok: t < 18, msg: t < 18 ? "Chest stacked over hips." : "Don't lean over the front leg — lift the torso." };
+        }
+      },
+    ]
+  }
+};
+
+// ---------- App state / DOM ----------
+const video = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const statusEl = document.getElementById("status");
+const placeholder = document.getElementById("placeholder");
+const posePicker = document.getElementById("posePicker");
+const poseNameEl = document.getElementById("poseName");
+const poseDescEl = document.getElementById("poseDesc");
+const cuesEl = document.getElementById("cues");
+const ring = document.getElementById("ring");
+const scoreText = document.getElementById("scoreText");
+
+let currentPose = "mountain";
+let poseLandmarker = null;
+let running = false;
+let stream = null;
+let lastVideoTime = -1;
+let smoothScore = null;
+
+// Build pose picker buttons
+Object.entries(POSES).forEach(([key, p], i) => {
+  const b = document.createElement("button");
+  b.textContent = p.name;
+  b.dataset.key = key;
+  if (i === 0) b.classList.add("active");
+  b.addEventListener("click", () => selectPose(key));
+  posePicker.appendChild(b);
+});
+
+function selectPose(key) {
+  currentPose = key;
+  [...posePicker.children].forEach(b => b.classList.toggle("active", b.dataset.key === key));
+  const p = POSES[key];
+  poseNameEl.textContent = p.name + "  ·  " + p.sanskrit;
+  poseDescEl.textContent = p.desc;
+  renderCues(null); // reset
+  if (typeof resetCoach === "function") resetCoach();
+  if (voiceOn && running) speak(p.name + ". " + p.desc);
+}
+
+function setStatus(msg, isErr = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("err", isErr);
+}
+
+// ---------- Load model (with CDN + delegate fallbacks) ----------
+const WASM_CDNS = [
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm",
+  "https://unpkg.com/@mediapipe/tasks-vision@0.10.12/wasm"
+];
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+
+async function loadModel() {
+  if (!navigator.onLine) {
+    throw new Error("offline");
+  }
+  setStatus("Downloading pose model (first time only)…");
+  let vision = null, lastErr = null;
+  for (const cdn of WASM_CDNS) {
+    try {
+      vision = await FilesetResolver.forVisionTasks(cdn);
+      break;
+    } catch (e) { lastErr = e; }
+  }
+  if (!vision) throw new Error("wasm-fetch:" + (lastErr && lastErr.message));
+
+  // Try GPU acceleration first, fall back to CPU if unavailable.
+  for (const delegate of ["GPU", "CPU"]) {
+    try {
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate },
+        runningMode: "VIDEO",
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      setStatus("Model ready (" + delegate + ").");
+      return;
+    } catch (e) {
+      lastErr = e;
+      console.warn(delegate + " delegate failed:", e);
+    }
+  }
+  throw new Error("model-fetch:" + (lastErr && lastErr.message));
+}
+
+// ---------- Camera ----------
+async function start() {
+  startBtn.disabled = true;
+
+  // 1) Start the camera FIRST so this step is verified on its own.
+  try {
+    setStatus("Requesting camera…");
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: "user" },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    placeholder.classList.add("hidden");
+    running = true;
+    stopBtn.disabled = false;
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error("camera:", e);
+    let m;
+    if (/NotAllowed|Permission/i.test(e.name + e.message)) {
+      m = location.protocol === "file:"
+        ? "Camera blocked because this page is opened as a local file. Chrome won't show a prompt on file:// pages. Open it via http://localhost instead — see the note below."
+        : "Camera permission was denied and no prompt appeared. Two things to check: (1) click the camera icon in Chrome's address bar and set it to Allow; (2) on Mac, open System Settings ▸ Privacy & Security ▸ Camera and make sure Chrome is switched on. Then press Start again.";
+    } else if (/NotFound|Devices/i.test(e.name)) {
+      m = "No camera was found. Check that a webcam is connected and not in use by another app.";
+    } else if (/NotReadable|TrackStart/i.test(e.name)) {
+      m = "The camera is busy — another app (Zoom, FaceTime, Photo Booth…) may be using it. Close that app and press Start again.";
+    } else {
+      m = "Couldn't open the camera: " + e.message;
+    }
+    setStatus(m, true);
+    startBtn.disabled = false;
+    return;
+  }
+
+  // 2) Then load the pose model. Camera keeps running even if this fails.
+  if (!poseLandmarker) {
+    try {
+      await loadModel();
+      setStatus("Tracking… step back so your whole body is in frame.");
+    } catch (e) {
+      console.error("model:", e);
+      let msg;
+      if (e.message === "offline") {
+        msg = "You appear to be offline. The pose model has to download once from the internet — reconnect and press Start again. (Your camera is working.)";
+      } else if (e.message.startsWith("wasm-fetch") || e.message.startsWith("model-fetch") || /fetch/i.test(e.message)) {
+        msg = "Camera works, but the pose model couldn't download — a network or firewall is blocking it. Try a different network, or see the note below about running a tiny local server.";
+      } else {
+        msg = "Camera works, but the pose model failed to load: " + e.message;
+      }
+      setStatus(msg, true);
+    }
+  } else {
+    setStatus("Tracking… step back so your whole body is in frame.");
+  }
+}
+
+function stop() {
+  running = false;
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
+  placeholder.classList.remove("hidden");
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  setStatus("Stopped.");
+  scoreText.textContent = "Waiting…";
+  ring.style.setProperty("--pct", 0);
+  ring.textContent = "—";
+}
+
+// ---------- Main loop ----------
+function loop() {
+  if (!running) return;
+  if (video.readyState >= 2) {
+    if (canvas.width !== video.videoWidth) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    const now = performance.now();
+    if (poseLandmarker && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      const res = poseLandmarker.detectForVideo(video, now);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (res.landmarks && res.landmarks.length) {
+        const lm = res.landmarks[0];
+        drawSkeleton(lm);
+        evaluate(lm);
+      } else {
+        setStatus("No body detected — make sure you're fully in frame.");
+      }
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------- Drawing ----------
+function drawSkeleton(lm) {
+  const W = canvas.width, H = canvas.height;
+  ctx.lineWidth = Math.max(3, W * 0.006);
+  ctx.strokeStyle = "rgba(88,166,255,0.9)";
+  ctx.fillStyle = "#3fb950";
+  for (const [a, b] of CONNECTIONS) {
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x * W, lm[a].y * H);
+    ctx.lineTo(lm[b].x * W, lm[b].y * H);
+    ctx.stroke();
+  }
+  const r = Math.max(4, W * 0.008);
+  for (const i of Object.values(L)) {
+    ctx.beginPath();
+    ctx.arc(lm[i].x * W, lm[i].y * H, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ---------- Voice coaching (Web Speech API — built in, offline) ----------
+const voiceBtn = document.getElementById("voiceBtn");
+let voiceOn = false;
+let ttsVoice = null;
+let lastCueSpoken = "";
+let lastSpeakAt = 0;
+let praiseGiven = false;
+const SPEAK_INTERVAL = 4000;   // min gap between different corrections
+const REPEAT_INTERVAL = 8000;  // min gap before repeating the SAME correction
+const PRAISES = ["Beautiful. Hold it there.", "That's it — lovely alignment.", "Perfect. Stay with the breath.", "Great posture. Hold and breathe."];
+
+function pickVoice() {
+  if (!("speechSynthesis" in window)) return;
+  const vs = window.speechSynthesis.getVoices();
+  ttsVoice =
+    vs.find(v => /en[-_]?(US|GB|AU)/i.test(v.lang) && /female|samantha|karen|serena|moira|tessa|google us english|zira/i.test(v.name)) ||
+    vs.find(v => /^en/i.test(v.lang)) ||
+    vs[0] || null;
+}
+if ("speechSynthesis" in window) {
+  window.speechSynthesis.onvoiceschanged = pickVoice;
+  pickVoice();
+}
+
+// Make spoken text sound natural (screen msgs use symbols speech reads oddly)
+function cleanForSpeech(s) {
+  return s
+    .replace(/°/g, " degrees")
+    .replace(/~/g, "about ")
+    .replace(/[()]/g, "")
+    .replace(/s+/g, " ")
+    .trim();
+}
+
+function speak(text, { interrupt = true } = {}) {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  if (interrupt) window.speechSynthesis.cancel(); // avoid a backlog of stale cues
+  const u = new SpeechSynthesisUtterance(text);
+  if (ttsVoice) u.voice = ttsVoice;
+  u.lang = (ttsVoice && ttsVoice.lang) || "en-US";
+  u.rate = 0.98; u.pitch = 1.0; u.volume = 1.0;
+  window.speechSynthesis.speak(u);
+}
+
+function resetCoach() { lastCueSpoken = ""; lastSpeakAt = 0; praiseGiven = false; }
+
+function coach(results) {
+  if (!voiceOn || !running) return;
+  const now = performance.now();
+  const firstFail = results.find(r => !r.ok);
+  if (firstFail) {
+    praiseGiven = false;
+    const line = cleanForSpeech(firstFail.msg);
+    const isSame = line === lastCueSpoken;
+    const gap = now - lastSpeakAt;
+    if ((!isSame && gap > SPEAK_INTERVAL) || (isSame && gap > REPEAT_INTERVAL)) {
+      speak(line);
+      lastCueSpoken = line;
+      lastSpeakAt = now;
+    }
+  } else if (!praiseGiven && now - lastSpeakAt > 1500) {
+    speak(PRAISES[Math.floor(Math.random() * PRAISES.length)]);
+    praiseGiven = true;
+    lastCueSpoken = "";
+    lastSpeakAt = now;
+  }
+}
+
+function toggleVoice() {
+  if (!("speechSynthesis" in window)) {
+    setStatus("This browser doesn't support speech. Try the latest Chrome.", true);
+    return;
+  }
+  voiceOn = !voiceOn;
+  voiceBtn.classList.toggle("voice-on", voiceOn);
+  voiceBtn.textContent = voiceOn ? "🔊 Voice coaching: on" : "🔊 Voice coaching: off";
+  if (voiceOn) {
+    pickVoice();
+    resetCoach();
+    speak("Voice coaching on. I'll guide your alignment."); // also unlocks audio via this click
+  } else {
+    window.speechSynthesis.cancel();
+  }
+}
+voiceBtn.addEventListener("click", toggleVoice);
+
+// ---------- Evaluation ----------
+function evaluate(lm) {
+  const pose = POSES[currentPose];
+  const results = pose.cues.map(c => {
+    const r = c.test(lm);
+    return { label: c.label, ok: r.ok, msg: r.msg };
+  });
+  const passed = results.filter(r => r.ok).length;
+  const rawScore = Math.round((passed / results.length) * 100);
+  // smooth to reduce jitter
+  smoothScore = smoothScore == null ? rawScore : Math.round(smoothScore * 0.7 + rawScore * 0.3);
+  renderCues(results, smoothScore);
+  coach(results);
+}
+
+function renderCues(results, score) {
+  cuesEl.innerHTML = "";
+  const pose = POSES[currentPose];
+  const list = results || pose.cues.map(c => ({ label: c.label, ok: null, msg: "Get into position…" }));
+  for (const r of list) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = "dot " + (r.ok === null ? "idle" : (r.ok ? "good" : "bad"));
+    dot.textContent = r.ok === null ? "•" : (r.ok ? "✓" : "!");
+    const txt = document.createElement("div");
+    txt.className = "cue-text";
+    txt.innerHTML = "<span>" + r.label + "</span><span class='msg'>" + r.msg + "</span>";
+    li.appendChild(dot); li.appendChild(txt);
+    cuesEl.appendChild(li);
+  }
+  if (score == null) {
+    scoreText.textContent = "Waiting…";
+    ring.style.setProperty("--pct", 0);
+    ring.textContent = "—";
+  } else {
+    ring.style.setProperty("--pct", score);
+    ring.textContent = score;
+    const c = score >= 80 ? "var(--good)" : (score >= 50 ? "var(--accent)" : "var(--bad)");
+    ring.style.background =
+      "radial-gradient(closest-side, var(--panel) 74%, transparent 75% 100%)," +
+      "conic-gradient(" + c + " calc(" + score + " * 1%), var(--line) 0)";
+    scoreText.textContent = score >= 80 ? "Great alignment!" : (score >= 50 ? "Getting there…" : "Keep adjusting");
+  }
+}
+
+// init
+selectPose("mountain");
+startBtn.addEventListener("click", start);
+stopBtn.addEventListener("click", stop);
+
+// Warn up front if opened as a file:// page — Chrome blocks the camera there
+// (denies with no prompt) and often blocks the model download too.
+if (location.protocol === "file:") {
+  setStatus("⚠ This page is opened as a local file, and Chrome blocks the camera on file:// pages (that's why no permission prompt appears). Run it from a local server instead — see the note below.", true);
+}
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  setStatus("This browser doesn't expose camera access here. Use Chrome, and open the page via http://localhost (see the note below).", true);
+}
+</script>
+</body>
+</html>
