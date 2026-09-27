@@ -733,7 +733,8 @@ function speak(text, { interrupt = true } = {}) {
   const u = new SpeechSynthesisUtterance(text);
   if (ttsVoice) u.voice = ttsVoice;
   u.lang = (ttsVoice && ttsVoice.lang) || "en-US";
-  u.rate = 0.98; u.pitch = 1.0; u.volume = 1.0;
+  // Slower pace + lower pitch reads as a calmer, gentler coach rather than a rushed, sharp voice.
+  u.rate = 0.82; u.pitch = 0.78; u.volume = 1.0;
   window.speechSynthesis.speak(u);
 }
 
