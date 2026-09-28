@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.4 |
+| **Spec version** | 1.5 |
 | **Date** | 2026-09-28 |
-| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "Add Warrior I, Warrior III, Half Forward Fold and per-pose hold timer" |
+| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "Add My routine: saved, editable list of poses and hold times (v1.5)" |
 | **Live URL** | https://manishchhaya-rgb.github.io/SamajYoga/ |
 
 **Purpose of this document:** anyone (or Claude) given only this file should be able to rebuild the app so it behaves the same. Every threshold, colour, message and timing that affects behaviour is listed here. It is updated with every change to the app, and the version number goes up each time.
@@ -18,6 +18,7 @@ SamajYoga is a "yoga teacher" that runs in a web browser. It uses the device's f
 - draws a skeleton over the mirrored video, with each checked body line **red** until aligned and **green** when aligned;
 - shows a checklist of alignment cues and a 0–100 **alignment score**;
 - runs a per-pose **hold timer** (default 10 s) that counts only while fully aligned;
+- lets the user build **My routine** — a saved, editable list of poses with a hold time each — and run it as a guided session;
 - optionally **speaks** corrections and encouragement.
 
 Everything runs on the device. No video or data leaves the machine; only the pose model and library are downloaded once.
@@ -53,13 +54,17 @@ Dark theme. Two columns on wide screens (left `minmax(0,1.4fr)`, right `minmax(2
 3. **Controls:** "Start camera" (primary, blue), "Stop" (disabled until running), "🔊 Voice coaching: off/on" (green outline when on).
 4. **Pose picker:** one button per pose, in this order: Mountain Pose, Tree Pose, Warrior I, Warrior II, Warrior III, Half Forward Fold. The active pose has a blue border and background `#14263f`.
 5. **Status line:** 13px, muted; turns orange for errors.
-6. **Help text** (12.5px, muted) covering: framing tip and privacy; skeleton colours; hold timer; "Half Forward Fold: stand side-on to the camera"; voice coaching; and what to do if the model won't download (run `python3 -m http.server 8000` and open `http://localhost:8000/…`).
+6. **Help text** (12.5px, muted) covering: framing tip and privacy; skeleton colours; hold timer; My routine ("build a list of poses with a hold time for each (saved on this device). Press *Start routine* and the app coaches each pose in turn, moving on 3 seconds after each hold is complete."); "Half Forward Fold: stand side-on to the camera"; voice coaching; and what to do if the model won't download (run `python3 -m http.server 8000` and open `http://localhost:8000/index.html`).
 
-**Right column (panel):**
+**Right column:** two stacked panels (flex column, gap 18px).
+
+**Right column, first panel:**
 1. Pose title as "Name  ·  Sanskrit", and the pose description underneath.
 2. **Score ring:** 76px circle drawn as a conic-gradient ring with the number inside. Label beside it is "Waiting…", "Keep adjusting" (<50), "Getting there…" (50–79) or "Great alignment!" (≥80), with "Alignment score" underneath. Ring colour is green ≥80, blue 50–79, orange <50. It shows "—" when idle.
 3. **Hold timer box** (see §9): "⏱ Hold timer", − [10s] + buttons, progress bar, status text and a "Restart" button.
 4. **Cue checklist:** one row per cue, with a round badge and the cue label, plus a one-line message under it. The badge is ✓ green, ! orange, or • grey (idle, message "Get into position…").
+
+**Right column, second panel — 📋 My routine:** see §9a.
 
 **Colours (CSS variables):** bg `#0e1116`, panel `#161b22`, panel-2 `#1c232d`, text `#e6edf3`, muted `#9aa7b4`, good `#3fb950`, bad (UI orange) `#f0883e`, accent `#58a6ff`, line `#2b3440`, seg-bad (skeleton red) `#f85149`. System font stack. Buttons have 10px radius, padding 10px 14px, and a blue border on hover.
 
@@ -171,7 +176,8 @@ Description: "Stand side-on to the camera. Hinge forward from the hips with a lo
 
 ## 9. Hold timer
 
-- Per-pose target, **default 10 s**, adjusted with − / + in **5 s steps**, limited to **5–120 s**. Saved per pose in `localStorage` under key `samajyoga.holdTargets` as JSON `{poseKey: seconds}`. Every storage read and write is wrapped in try/catch, and the app must work without storage. Changing the target restarts the timer.
+- **Outside a routine:** per-pose target, **default 10 s**, adjusted with − / + in **5 s steps**, limited to **5–120 s**. Saved per pose in `localStorage` under key `samajyoga.holdTargets` as JSON `{poseKey: seconds}`. Every storage read and write is wrapped in try/catch, and the app must work without storage. Changing the target restarts the timer.
+- **During a routine:** the target is the current routine step's seconds, and the panel's − / + buttons are disabled.
 - "All ok" means every cue in the current pose passes on that frame.
 - The timer starts the first time all cues pass. After that it is **active** while the last all-ok frame was less than **0.6 s** ago (short tracking wobbles don't pause it). Time is added only while active; each frame adds at most 0.25 s.
 - **Voice** (only if voice coaching is on): once remaining time drops to 5 s or below while above 4 s, say "Five more seconds." once, but only if the target is ≥ 10 s. At 0 s, mark it done and say "Well done. Release the pose."
@@ -182,6 +188,35 @@ Description: "Stand side-on to the camera. Hinge forward from the hips with a lo
   - done: "Hold complete ✓ — nice work!" (green, bold; the bar turns green)
 - **Progress bar:** 8px, fill width = elapsed ÷ target (blue, green when done).
 - **Reset** (elapsed back to 0, not started, not done) happens on: pose change, Stop, the Restart button, and changing the target. Reset also clears the voice "praise given" flag.
+- When a hold completes, it notifies the routine (§9a), which moves on if a routine is running.
+
+## 9a. My routine
+
+**Data:** an ordered list of steps `[{pose, secs}]`. `pose` is a key of the pose table (`mountain`, `tree`, `warrior1`, `warrior2`, `warrior3`, `fold`). `secs` is a whole number from **5 to 300**; anything else is rounded and clamped, and non-numbers become 10. The list is saved as JSON in `localStorage` under **`samajyoga.routine`** after every change, and every read and write is wrapped in try/catch.
+
+**Loading:** if storage holds a valid list, use it, dropping any step whose pose no longer exists and clamping seconds. An **empty list stays empty**. If nothing is stored or the data is unreadable, use the **default routine: every pose in pose-table order, 10 s each.**
+
+**Pose choices** come straight from the pose table, so a pose added to the app automatically appears in the routine's pose menus, the pose picker, and the default routine.
+
+**Panel layout:**
+- Title "📋 My routine", sub-text "A list of poses and how long to hold each. Saved on this device — edit it any time."
+- **Run box** (hidden unless a routine is running or has just finished; blue border, background `#14263f`):
+  - line 1 (bold): "Step N of M: {Pose name} · {secs}s";
+  - line 2 (muted): before the hold is done, "Up next: {name} · {secs}s" or "Last pose"; after it's done, "Next: {name} in a moment…" or "Last pose done — finishing…";
+  - buttons "Skip ⏭" and "Stop routine";
+  - after the last step it shows "Routine complete ✓ — great work!" with the second line empty.
+- **Step list:** one card per step in a 4-column grid: step number · pose dropdown (full width) · seconds control (− button, number input 5–300 in steps of 5, "s", + button; ±5 s) · ↑ ↓ ✕ buttons. ↑ is disabled on the first row and ↓ on the last. During a run, the current step has a blue border and background, finished steps are dimmed to 55%, and **every edit control is disabled**.
+- If the list is empty, show "Your routine is empty — press “+ Add pose” to start building it."
+- **Buttons:** "+ Add pose" (appends a step with the same pose as the last step, or the first pose if the list is empty, at 10 s), "Reset to default" (asks for confirmation: "Replace your routine with the default list (every pose, 10 s each)?"), "▶ Start routine" (primary). Add and Reset are disabled during a run; Start is disabled during a run or when the list is empty.
+- **Total line** (muted): "N pose(s) · {total holding time}", where the time is shown as "X s", "X min" or "X min Y s". Blank when the list is empty.
+
+**Running:**
+- **Start routine:** mark the routine active, go to step 1, and start the camera if it isn't already running.
+- **Go to step i:** select that step's pose (this resets the hold timer to the step's seconds and, if voice is on and the camera is running, speaks the pose name and description), then refresh the list and run box.
+- When a hold completes (the timer already says "Well done. Release the pose."), wait **3 s**, then go to the next step. After the last step, the routine finishes: say "Routine complete. Great work.", mark it inactive and finished, reset the hold timer, and unlock editing.
+- **Skip ⏭:** go to the next step immediately (or finish if on the last).
+- **Stop routine:** cancel any pending step change, mark inactive, reset the hold timer, and hide the run box.
+- **Picking a pose manually** from the pose picker during a routine stops the routine first. **Stopping the camera** also stops the routine.
 
 ## 10. Voice coaching
 
@@ -222,7 +257,7 @@ Line widths scale with the canvas width W (height H). Landmark x, y are multipli
      - anything else → "Couldn't open the camera: {message}"
   3. If the model isn't loaded yet, show "Downloading pose model (first time only)…" and load it (§3). If offline → "You appear to be offline. The pose model has to download once from the internet — reconnect and press Start again. (Your camera is working.)" If a download fails → "Camera works, but the pose model couldn't download — a network or firewall is blocking it…". Any other failure → "Camera works, but the pose model failed to load: {message}". On success, briefly show "Model ready (GPU|CPU).", then "Tracking… step back so your whole body is in frame." The camera keeps running even if the model fails.
 - **Frame loop** (`requestAnimationFrame`): when the video has data, match the canvas size to the video. Only when `video.currentTime` has changed, run `detectForVideo(video, performance.now())`, clear the canvas, then evaluate (§8) and draw (§11).
-- **Stop:** cancel speech, stop the camera tracks, show the placeholder, re-enable Start and disable Stop, clear the canvas and line smoothing, reset the hold timer, show "Stopped.", and reset the ring to "—" and "Waiting…".
+- **Stop:** stop any running routine, cancel speech, stop the camera tracks, show the placeholder, re-enable Start and disable Stop, clear the canvas and line smoothing, reset the hold timer, show "Stopped.", and reset the ring to "—" and "Waiting…".
 
 ## 13. Acceptance checks (to confirm a rebuild matches)
 
@@ -234,13 +269,17 @@ Line widths scale with the canvas width W (height H). Landmark x, y are multipli
 6. Stepping out of a pose for about 2 s mid-hold → the timer shows "Paused…", then resumes from where it was. A 0.3 s tracking blip doesn't pause it.
 7. Changing a pose's timer to 20 s, reloading the page → it's still 20 s for that pose and 10 s for the others.
 8. With voice on, at full alignment → praise plus "Hold for N seconds", "Five more seconds", then "Well done. Release the pose."
+9. First visit: My routine lists all 6 poses at 10 s each, with the total "6 poses · 1 min". Edit it (change seconds, reorder, delete, add), reload the page → the edits are still there.
+10. Typing 999 seconds → it becomes 300; typing 2 → it becomes 5.
+11. Start routine → the run box shows "Step 1 of N…", editing and the panel's −/+ are locked, and the timer uses that step's seconds. When the hold completes → 3 s later the app moves to step 2. Skip works. After the last step → "Routine complete ✓" and editing unlocks.
+12. Clicking a pose button during a routine → the routine stops and that pose uses its normal per-pose time.
 
 ## 14. Known limitations
 
 - Thresholds are hand-picked and not yet tuned with real users; the side-on poses (Warrior I/III, Fold) need real-camera testing.
 - The app is 2D only: poses judged side-on can't check things that are only visible from the front (e.g. hips square in Warrior I).
 - Single person only; the first detected body is used.
-- The help text still refers to `yoga-teacher.html` in the local-server tip (the hosted file is `index.html`).
+- One routine per device; routines aren't synced between devices (e.g. phone and laptop).
 
 ## 15. Version history
 
@@ -251,3 +290,4 @@ Line widths scale with the canvas width W (height H). Landmark x, y are multipli
 | 1.2 | 2026-09-27 | Hosted on GitHub Pages as SamajYoga; aspect-ratio correction in angle maths; centre, level and spine guides with degree readout; slower, deeper voice (0.82/0.78) |
 | 1.3 | 2026-09-28 | Colour-coded skeleton (red/green/grey per line) + legend; tilt helpers made direction-independent (fixed ~180° spine reading) |
 | 1.4 | 2026-09-28 | Warrior I, Warrior III, Half Forward Fold; per-pose hold timer (default 10 s); guides follow each pose's checks; score can reach 100 |
+| 1.5 | 2026-09-28 | My routine: saved, editable list of poses + hold times (default: every pose at 10 s), guided run with auto-advance, skip and stop; help text points to `index.html` |

@@ -121,6 +121,28 @@
   .hold-status { font-size: 13px; color: var(--muted); }
   .hold.done .hold-status { color: var(--good); font-weight: 600; }
   .hold-foot button { padding: 5px 10px; font-size: 12.5px; }
+  .right { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .routine-run { background: #14263f; border: 1px solid var(--accent); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .routine-run[hidden] { display: none; }
+  .routine-now { font-size: 14px; font-weight: 650; }
+  .routine-next { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .routine-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .routine-btns button { padding: 6px 11px; font-size: 13px; }
+  ol.steps { list-style: none; margin: 0 0 12px; padding: 0; }
+  ol.steps li { display: grid; grid-template-columns: 22px minmax(0,1fr) auto auto; gap: 6px 8px; align-items: center;
+    padding: 8px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; background: var(--panel-2); }
+  ol.steps li.current { border-color: var(--accent); background: #14263f; }
+  ol.steps li.done { opacity: .55; }
+  ol.steps .num { color: var(--muted); font-size: 13px; text-align: center; }
+  ol.steps select, ol.steps input { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 8px; font-size: 14px; min-width: 0; width: 100%; }
+  ol.steps input { width: 56px; text-align: center; }
+  ol.steps .secs { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+  ol.steps .move { display: flex; gap: 4px; }
+  ol.steps button { padding: 5px 9px; font-size: 13px; line-height: 1; }
+  .routine-empty { color: var(--muted); font-size: 13px; padding: 8px 0 12px; }
+  .routine-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .routine-total { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
   ul.cues { list-style: none; margin: 0; padding: 0; }
   ul.cues li {
     display: flex; gap: 10px; align-items: flex-start;
@@ -179,6 +201,8 @@
       shoulders goes green when your shoulders are level. When every checked line is green you're at 100%.
       <br><br><strong>⏱ Hold timer:</strong> once every checked line is green, the timer counts down (10 seconds by default —
       change it per pose with − / +). If you slip out of alignment it pauses and carries on when you're back in position.
+      <br><br><strong>📋 My routine:</strong> build a list of poses with a hold time for each (saved on this device).
+      Press <em>Start routine</em> and the app coaches each pose in turn, moving on 3 seconds after each hold is complete.
       <br><br><strong>Half Forward Fold:</strong> stand side-on to the camera so it can see the angle at your hips.
       <br><br><strong>🔊 Voice coaching:</strong> click the button to have the app speak your corrections aloud —
       handy when you're in a pose and can't look at the screen. It speaks the most important fix first,
@@ -186,10 +210,11 @@
       <br><br><strong>If you see a "model couldn't download" message:</strong> the app needs to fetch the pose model from the internet once.
       Some networks/firewalls block this when the file is opened directly. The reliable fix is to serve the file from a tiny local server:
       open a terminal in the folder with this file and run <code>python3 -m http.server 8000</code>, then visit
-      <code>http://localhost:8000/yoga-teacher.html</code> in Chrome.
+      <code>http://localhost:8000/index.html</code> in Chrome.
     </div>
   </div>
 
+  <div class="right">
   <div class="panel">
     <h2 id="poseName">Mountain Pose</h2>
     <div class="sub" id="poseDesc">Stand tall and grounded.</div>
@@ -219,6 +244,27 @@
     </div>
 
     <ul class="cues" id="cues"></ul>
+  </div>
+
+  <div class="panel" id="routinePanel">
+    <h2>📋 My routine</h2>
+    <div class="sub">A list of poses and how long to hold each. Saved on this device — edit it any time.</div>
+    <div class="routine-run" id="routineRun" hidden>
+      <div class="routine-now" id="routineNow"></div>
+      <div class="routine-next" id="routineNext"></div>
+      <div class="routine-btns">
+        <button id="routineSkip">Skip ⏭</button>
+        <button id="routineStop">Stop routine</button>
+      </div>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="routine-actions">
+      <button id="addStep">+ Add pose</button>
+      <button id="resetRoutine">Reset to default</button>
+      <button id="startRoutine" class="primary">▶ Start routine</button>
+    </div>
+    <div class="routine-total" id="routineTotal"></div>
+  </div>
   </div>
 </div>
 
@@ -674,7 +720,8 @@ Object.entries(POSES).forEach(([key, p], i) => {
   posePicker.appendChild(b);
 });
 
-function selectPose(key) {
+function selectPose(key, fromRoutine = false) {
+  if (!fromRoutine && routineActive) stopRoutine();
   currentPose = key;
   [...posePicker.children].forEach(b => b.classList.toggle("active", b.dataset.key === key));
   const p = POSES[key];
@@ -805,6 +852,7 @@ function stop() {
   stopBtn.disabled = true;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   segSmooth.clear();
+  if (routineActive) stopRoutine();
   resetHold();
   setStatus("Stopped.");
   scoreText.textContent = "Waiting…";
@@ -1094,7 +1142,10 @@ try { holdTargets = JSON.parse(localStorage.getItem("samajyoga.holdTargets") || 
 let holdElapsed = 0, holdStarted = false, holdDone = false, holdActive = false;
 let lastHoldTick = null, lastAlignedAt = 0, fiveSecSaid = false;
 
-function holdTarget() { return holdTargets[currentPose] ?? HOLD_DEFAULT; }
+function holdTarget() {
+  if (routineActive && routine[routineIndex]) return routine[routineIndex].secs;
+  return holdTargets[currentPose] ?? HOLD_DEFAULT;
+}
 function setHoldTarget(sec) {
   holdTargets[currentPose] = Math.min(HOLD_MAX, Math.max(HOLD_MIN, sec));
   try { localStorage.setItem("samajyoga.holdTargets", JSON.stringify(holdTargets)); } catch (e) {}
@@ -1116,6 +1167,9 @@ function renderHold() {
     !holdStarted ? "Get every line green to start the timer." :
     holdActive ? "Holding… " + left + "s left" :
     "Paused — realign to continue (" + left + "s left)";
+  // In a routine the hold time comes from the routine step, so the −/+ buttons are locked.
+  holdMinusBtn.disabled = holdPlusBtn.disabled = routineActive;
+  renderRoutineRun();
 }
 function updateHold(allOk) {
   const now = performance.now();
@@ -1137,12 +1191,14 @@ function updateHold(allOk) {
       holdDone = true; holdActive = false;
       speak("Well done. Release the pose.");
       lastSpeakAt = now;
+      onHoldComplete();
     }
   }
   renderHold();
 }
-document.getElementById("holdMinus").addEventListener("click", () => setHoldTarget(holdTarget() - HOLD_STEP));
-document.getElementById("holdPlus").addEventListener("click", () => setHoldTarget(holdTarget() + HOLD_STEP));
+const holdMinusBtn = document.getElementById("holdMinus"), holdPlusBtn = document.getElementById("holdPlus");
+holdMinusBtn.addEventListener("click", () => setHoldTarget(holdTarget() - HOLD_STEP));
+holdPlusBtn.addEventListener("click", () => setHoldTarget(holdTarget() + HOLD_STEP));
 document.getElementById("holdReset").addEventListener("click", resetHold);
 
 // ---------- Evaluation ----------
@@ -1209,7 +1265,185 @@ function renderCues(results, score) {
   }
 }
 
+// ---------- My routine (list of poses + hold times, saved on this device) ----------
+// Pose choices come from POSES, so any pose added there appears here automatically.
+const ROUTINE_KEY = "samajyoga.routine";
+const STEP_MIN = 5, STEP_MAX = 300, STEP_DEFAULT = 10, STEP_INC = 5, NEXT_DELAY_MS = 3000;
+const stepsEl = document.getElementById("steps");
+const routineRunEl = document.getElementById("routineRun");
+const routineNowEl = document.getElementById("routineNow");
+const routineNextEl = document.getElementById("routineNext");
+const routineTotalEl = document.getElementById("routineTotal");
+const startRoutineBtn = document.getElementById("startRoutine");
+const addStepBtn = document.getElementById("addStep");
+const resetRoutineBtn = document.getElementById("resetRoutine");
+
+let routineActive = false, routineIndex = 0, routineTimer = null, routineFinished = false;
+
+function clampSecs(v) {
+  v = Math.round(Number(v));
+  if (!Number.isFinite(v)) v = STEP_DEFAULT;
+  return Math.min(STEP_MAX, Math.max(STEP_MIN, v));
+}
+function defaultRoutine() {
+  return Object.keys(POSES).map(pose => ({ pose, secs: STEP_DEFAULT }));
+}
+function loadRoutine() {
+  try {
+    const r = JSON.parse(localStorage.getItem(ROUTINE_KEY));
+    if (Array.isArray(r)) {
+      // drop steps whose pose no longer exists; tidy up the seconds
+      return r.filter(st => st && POSES[st.pose]).map(st => ({ pose: st.pose, secs: clampSecs(st.secs) }));
+    }
+  } catch (e) {}
+  return defaultRoutine();
+}
+function saveRoutine() {
+  try { localStorage.setItem(ROUTINE_KEY, JSON.stringify(routine)); } catch (e) {}
+}
+let routine = loadRoutine();
+
+function fmtDuration(total) {
+  const m = Math.floor(total / 60), sec = total % 60;
+  return m ? `${m} min ${sec ? sec + " s" : ""}`.trim() : `${sec} s`;
+}
+
+function renderSteps() {
+  stepsEl.innerHTML = "";
+  if (!routine.length) {
+    const p = document.createElement("div");
+    p.className = "routine-empty";
+    p.textContent = "Your routine is empty — press “+ Add pose” to start building it.";
+    stepsEl.appendChild(p);
+  }
+  routine.forEach((st, i) => {
+    const li = document.createElement("li");
+    if (routineActive && i === routineIndex) li.classList.add("current");
+    if (routineActive && i < routineIndex) li.classList.add("done");
+
+    const num = document.createElement("span");
+    num.className = "num"; num.textContent = i + 1;
+
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", "Pose for step " + (i + 1));
+    for (const [key, p] of Object.entries(POSES)) {
+      const o = document.createElement("option");
+      o.value = key; o.textContent = p.name;
+      if (key === st.pose) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", () => { st.pose = sel.value; saveRoutine(); renderSteps(); });
+
+    const secs = document.createElement("div");
+    secs.className = "secs";
+    const minus = document.createElement("button"); minus.textContent = "−"; minus.title = "5 seconds less";
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.min = STEP_MIN; inp.max = STEP_MAX; inp.step = STEP_INC; inp.value = st.secs;
+    inp.setAttribute("aria-label", "Seconds to hold step " + (i + 1));
+    const unit = document.createElement("span"); unit.textContent = "s";
+    const plus = document.createElement("button"); plus.textContent = "+"; plus.title = "5 seconds more";
+    const setSecs = (v) => { st.secs = clampSecs(v); saveRoutine(); renderSteps(); };
+    minus.addEventListener("click", () => setSecs(st.secs - STEP_INC));
+    plus.addEventListener("click", () => setSecs(st.secs + STEP_INC));
+    inp.addEventListener("change", () => setSecs(inp.value));
+    secs.append(minus, inp, unit, plus);
+
+    const move = document.createElement("div");
+    move.className = "move";
+    const up = document.createElement("button"); up.textContent = "↑"; up.title = "Move up";
+    const down = document.createElement("button"); down.textContent = "↓"; down.title = "Move down";
+    const del = document.createElement("button"); del.textContent = "✕"; del.title = "Remove";
+    up.disabled = i === 0; down.disabled = i === routine.length - 1;
+    const swap = (a, b) => { [routine[a], routine[b]] = [routine[b], routine[a]]; saveRoutine(); renderSteps(); };
+    up.addEventListener("click", () => swap(i, i - 1));
+    down.addEventListener("click", () => swap(i, i + 1));
+    del.addEventListener("click", () => { routine.splice(i, 1); saveRoutine(); renderSteps(); });
+    move.append(up, down, del);
+
+    // No editing while a routine is running
+    if (routineActive) [sel, minus, inp, plus, up, down, del].forEach(el => el.disabled = true);
+
+    li.append(num, sel, secs, move);
+    stepsEl.appendChild(li);
+  });
+  const total = routine.reduce((t, st) => t + st.secs, 0);
+  routineTotalEl.textContent = routine.length
+    ? `${routine.length} pose${routine.length === 1 ? "" : "s"} · ${fmtDuration(total)} of holding`
+    : "";
+  addStepBtn.disabled = resetRoutineBtn.disabled = routineActive;
+  startRoutineBtn.disabled = routineActive || !routine.length;
+}
+
+function renderRoutineRun() {
+  routineRunEl.hidden = !(routineActive || routineFinished);
+  if (routineFinished && !routineActive) {
+    routineNowEl.textContent = "Routine complete ✓ — great work!";
+    routineNextEl.textContent = "";
+    return;
+  }
+  if (!routineActive) return;
+  const st = routine[routineIndex], nxt = routine[routineIndex + 1];
+  routineNowEl.textContent = `Step ${routineIndex + 1} of ${routine.length}: ${POSES[st.pose].name} · ${st.secs}s`;
+  routineNextEl.textContent = holdDone
+    ? (nxt ? `Next: ${POSES[nxt.pose].name} in a moment…` : "Last pose done — finishing…")
+    : (nxt ? `Up next: ${POSES[nxt.pose].name} · ${nxt.secs}s` : "Last pose");
+}
+
+function goToStep(i) {
+  clearTimeout(routineTimer);
+  routineIndex = i;
+  selectPose(routine[i].pose, true);   // also resets the hold timer to this step's time
+  renderSteps();
+  renderRoutineRun();
+}
+function startRoutine() {
+  if (!routine.length) return;
+  routineActive = true; routineFinished = false;
+  goToStep(0);
+  if (!running) start();
+}
+function stopRoutine() {
+  clearTimeout(routineTimer);
+  routineActive = false; routineFinished = false;
+  resetHold();
+  renderSteps();
+  renderRoutineRun();
+}
+function finishRoutine() {
+  clearTimeout(routineTimer);
+  routineActive = false; routineFinished = true;
+  speak("Routine complete. Great work.");
+  lastSpeakAt = performance.now();
+  resetHold();
+  renderSteps();
+  renderRoutineRun();
+}
+function nextStep() {
+  if (!routineActive) return;
+  if (routineIndex + 1 < routine.length) goToStep(routineIndex + 1);
+  else finishRoutine();
+}
+// Called by the hold timer when a hold finishes
+function onHoldComplete() {
+  if (!routineActive) return;
+  clearTimeout(routineTimer);
+  routineTimer = setTimeout(nextStep, NEXT_DELAY_MS);
+}
+
+addStepBtn.addEventListener("click", () => {
+  routine.push({ pose: routine.length ? routine[routine.length - 1].pose : Object.keys(POSES)[0], secs: STEP_DEFAULT });
+  saveRoutine(); renderSteps();
+});
+resetRoutineBtn.addEventListener("click", () => {
+  if (!confirm("Replace your routine with the default list (every pose, 10 s each)?")) return;
+  routine = defaultRoutine(); saveRoutine(); renderSteps();
+});
+startRoutineBtn.addEventListener("click", startRoutine);
+document.getElementById("routineSkip").addEventListener("click", nextStep);
+document.getElementById("routineStop").addEventListener("click", stopRoutine);
+
 // init
+renderSteps();
 selectPose("mountain");
 startBtn.addEventListener("click", start);
 stopBtn.addEventListener("click", stop);
