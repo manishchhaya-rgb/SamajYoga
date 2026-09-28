@@ -21,6 +21,7 @@
     --bad: #f0883e;
     --accent: #58a6ff;
     --line: #2b3440;
+    --seg-bad: #f85149;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -68,7 +69,11 @@
   }
   .stage .placeholder.hidden { display: none; }
 
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+
+  .controls { display: gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   button {
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 10px;
@@ -140,6 +145,12 @@
       </div>
     </div>
 
+    <div class="legend">
+      <span><i style="background:var(--seg-bad)"></i>Needs adjusting</span>
+      <span><i style="background:var(--good)"></i>Aligned</span>
+      <span><i style="background:rgba(154,167,180,.55)"></i>Not checked in this pose</span>
+    </div>
+
     <div class="controls">
       <button id="startBtn" class="primary">Start camera</button>
       <button id="stopBtn" disabled>Stop</button>
@@ -151,6 +162,9 @@
     <div class="hint">
       Tip: place your device so the camera sees you head-to-toe. Good, even lighting and a plain background help the tracker.
       Nothing you see here is uploaded — the video and pose detection stay on your machine.
+      <br><br><strong>🟥🟩 Skeleton colours:</strong> every body line the pose checks starts <span style="color:var(--seg-bad)">red</span>
+      and turns <span style="color:var(--good)">green</span> as soon as that part is in alignment — e.g. the line across your
+      shoulders goes green when your shoulders are level. When every checked line is green you're at 100%.
       <br><br><strong>🔊 Voice coaching:</strong> click the button to have the app speak your corrections aloud —
       handy when you're in a pose and can't look at the screen. It speaks the most important fix first,
       waits a few seconds between cues so it isn't chatty, and praises you when your alignment is good.
@@ -201,6 +215,22 @@ const CONNECTIONS = [
   [23,25],[25,27],[24,26],[26,28]
 ];
 
+// ---------- Body-part segment groups (used to colour the skeleton) ----------
+// "spine" is a virtual line from mid-hips to mid-shoulders.
+const ARM = { l: [[11,13],[13,15]], r: [[12,14],[14,16]] };
+const LEG = { l: [[23,25],[25,27]], r: [[24,26],[26,28]] };
+const SHOULDERS = [[11,12]];
+const HIPS = [[23,24]];
+const TORSO = [["spine"], [11,23], [12,24]];
+const segKey = (s) => s.join("-");
+
+// Line colours
+const SEG_COLORS = {
+  good: "#3fb950",                 // aligned
+  bad:  "#f85149",                 // needs adjusting
+  idle: "rgba(154,167,180,0.55)"   // not checked by this pose
+};
+
 // ---------- Geometry helpers (2D, using normalized x/y) ----------
 // IMPORTANT: MediaPipe landmarks are normalized separately by frame width (x)
 // and frame height (y). Camera frames are almost never square (a phone in
@@ -230,19 +260,30 @@ function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function tiltFromVertical(a, b) {
   const AR = frameAspect();
   const dx = b.x - a.x, dy = (b.y - a.y) / AR;
-  return Math.abs(Math.atan2(dx, dy) * 180 / Math.PI); // angle from vertical axis
+  // absolute values so direction (up/down, left/right) doesn't matter — 0..90°
+  return Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
 }
 function tiltFromHorizontal(a, b) {
   const AR = frameAspect();
   const dx = b.x - a.x, dy = (b.y - a.y) / AR;
-  return Math.abs(Math.atan2(dy, dx) * 180 / Math.PI); // 0 = horizontal
+  return Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI; // 0..90, 0 = horizontal
+}
+
+function kneeAngles(lm) {
+  return {
+    l: angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]),
+    r: angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]),
+  };
 }
 
 // Score a value that should sit inside [lo, hi], degrading past a soft margin
 function within(value, lo, hi) { return value >= lo && value <= hi; }
 
 // ---------- Pose definitions ----------
-// Each cue returns { ok:boolean, msg:string } evaluated against landmarks (lm).
+// Each cue returns { ok, msg, marks } evaluated against landmarks (lm).
+// marks = [{ segs, ok }] — which skeleton lines this cue controls and whether
+// each one is currently aligned. Lines go green only when every cue that
+// controls them passes.
 const POSES = {
   mountain: {
     name: "Mountain Pose",
@@ -253,30 +294,37 @@ const POSES = {
         label: "Spine tall & vertical",
         test: (lm) => {
           const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
-          return { ok: t < 10, msg: t < 10 ? "Nicely stacked." : "Lengthen up — you're leaning to one side." };
+          const ok = t < 10;
+          return { ok, msg: ok ? "Nicely stacked." : "Lengthen up — you're leaning to one side.",
+                   marks: [{ segs: TORSO, ok }] };
         }
       },
       {
         label: "Shoulders level",
         test: (lm) => {
           const d = Math.abs(lm[L.lShoulder].y - lm[L.rShoulder].y);
-          return { ok: d < 0.04, msg: d < 0.04 ? "Even and relaxed." : "Drop the raised shoulder to level them." };
+          const ok = d < 0.04;
+          return { ok, msg: ok ? "Even and relaxed." : "Drop the raised shoulder to level them.",
+                   marks: [{ segs: SHOULDERS, ok }] };
         }
       },
       {
         label: "Hips level",
         test: (lm) => {
           const d = Math.abs(lm[L.lHip].y - lm[L.rHip].y);
-          return { ok: d < 0.04, msg: d < 0.04 ? "Weight is even." : "Balance your weight evenly on both feet." };
+          const ok = d < 0.04;
+          return { ok, msg: ok ? "Weight is even." : "Balance your weight evenly on both feet.",
+                   marks: [{ segs: HIPS, ok }] };
         }
       },
       {
         label: "Legs straight",
         test: (lm) => {
-          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
-          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
-          const ok = lk > 160 && rk > 160;
-          return { ok, msg: ok ? "Strong, straight legs." : "Gently straighten your knees." };
+          const k = kneeAngles(lm);
+          const okL = k.l > 160, okR = k.r > 160;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Strong, straight legs." : "Gently straighten your knees.",
+                   marks: [{ segs: LEG.l, ok: okL }, { segs: LEG.r, ok: okR }] };
         }
       },
     ]
@@ -290,43 +338,53 @@ const POSES = {
       {
         label: "Standing on one leg",
         test: (lm) => {
-          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
-          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
+          const k = kneeAngles(lm);
           // one leg fairly straight (standing), the other clearly bent
-          const straight = Math.max(lk, rk);
-          const bent = Math.min(lk, rk);
-          const ok = straight > 160 && bent < 130;
-          return { ok, msg: ok ? "Good — one leg lifted." : "Lift one foot and rest it against the standing leg." };
+          const stand = k.l >= k.r ? "l" : "r";
+          const lift = stand === "l" ? "r" : "l";
+          const okStand = k[stand] > 160;
+          const okLift = k[lift] < 130;
+          const ok = okStand && okLift;
+          return { ok, msg: ok ? "Good — one leg lifted." : "Lift one foot and rest it against the standing leg.",
+                   marks: [{ segs: LEG[stand], ok: okStand }, { segs: LEG[lift], ok: okLift }] };
         }
       },
       {
         label: "Standing leg strong",
         test: (lm) => {
-          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
-          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
-          const straight = Math.max(lk, rk);
-          return { ok: straight > 168, msg: straight > 168 ? "Rooted and steady." : "Press down and straighten the standing leg." };
+          const k = kneeAngles(lm);
+          const stand = k.l >= k.r ? "l" : "r";
+          const ok = k[stand] > 168;
+          return { ok, msg: ok ? "Rooted and steady." : "Press down and straighten the standing leg.",
+                   marks: [{ segs: LEG[stand], ok }] };
         }
       },
       {
         label: "Hips level & balanced",
         test: (lm) => {
           const d = Math.abs(lm[L.lHip].y - lm[L.rHip].y);
-          return { ok: d < 0.06, msg: d < 0.06 ? "Steady hips." : "Level the hips — don't jut one out." };
+          const ok = d < 0.06;
+          return { ok, msg: ok ? "Steady hips." : "Level the hips — don't jut one out.",
+                   marks: [{ segs: HIPS, ok }] };
         }
       },
       {
         label: "Arms lifted overhead",
         test: (lm) => {
-          const wristsUp = lm[L.lWrist].y < lm[L.nose].y && lm[L.rWrist].y < lm[L.nose].y;
-          return { ok: wristsUp, msg: wristsUp ? "Reaching up like branches." : "Raise both hands overhead (or to heart center)." };
+          const okL = lm[L.lWrist].y < lm[L.nose].y;
+          const okR = lm[L.rWrist].y < lm[L.nose].y;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Reaching up like branches." : "Raise both hands overhead (or to heart center).",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
         }
       },
       {
         label: "Torso upright",
         test: (lm) => {
           const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
-          return { ok: t < 14, msg: t < 14 ? "Tall and centered." : "Stack your chest over your hips." };
+          const ok = t < 14;
+          return { ok, msg: ok ? "Tall and centered." : "Stack your chest over your hips.",
+                   marks: [{ segs: TORSO, ok }] };
         }
       },
     ]
@@ -340,45 +398,51 @@ const POSES = {
       {
         label: "Front knee bent (~90°)",
         test: (lm) => {
-          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
-          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
-          const front = Math.min(lk, rk); // the more-bent leg
+          const k = kneeAngles(lm);
+          const frontSide = k.l <= k.r ? "l" : "r"; // the more-bent leg
+          const front = k[frontSide];
           const ok = within(front, 80, 120);
-          return { ok, msg: ok ? "Deep, strong lunge." : (front > 120 ? "Bend the front knee more toward 90°." : "Ease up — don't let the knee pass the ankle.") };
+          return { ok, msg: ok ? "Deep, strong lunge." : (front > 120 ? "Bend the front knee more toward 90°." : "Ease up — don't let the knee pass the ankle."),
+                   marks: [{ segs: LEG[frontSide], ok }] };
         }
       },
       {
         label: "Back leg straight",
         test: (lm) => {
-          const lk = angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]);
-          const rk = angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]);
-          const back = Math.max(lk, rk);
-          return { ok: back > 155, msg: back > 155 ? "Strong back leg." : "Straighten and energize the back leg." };
+          const k = kneeAngles(lm);
+          const backSide = k.l > k.r ? "l" : "r";
+          const ok = k[backSide] > 155;
+          return { ok, msg: ok ? "Strong back leg." : "Straighten and energize the back leg.",
+                   marks: [{ segs: LEG[backSide], ok }] };
         }
       },
       {
         label: "Arms level with floor",
         test: (lm) => {
-          const tL = tiltFromHorizontal(lm[L.lShoulder], lm[L.lWrist]);
-          const tR = tiltFromHorizontal(lm[L.rShoulder], lm[L.rWrist]);
-          const ok = tL < 20 && tR < 20;
-          return { ok, msg: ok ? "Arms floating, parallel to the floor." : "Lift both arms to shoulder height, reaching out." };
+          const okL = tiltFromHorizontal(lm[L.lShoulder], lm[L.lWrist]) < 20;
+          const okR = tiltFromHorizontal(lm[L.rShoulder], lm[L.rWrist]) < 20;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Arms floating, parallel to the floor." : "Lift both arms to shoulder height, reaching out.",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
         }
       },
       {
         label: "Arms extended",
         test: (lm) => {
-          const le = angle(lm[L.lShoulder], lm[L.lElbow], lm[L.lWrist]);
-          const re = angle(lm[L.rShoulder], lm[L.rElbow], lm[L.rWrist]);
-          const ok = le > 155 && re > 155;
-          return { ok, msg: ok ? "Long through the fingertips." : "Straighten the elbows and reach wide." };
+          const okL = angle(lm[L.lShoulder], lm[L.lElbow], lm[L.lWrist]) > 155;
+          const okR = angle(lm[L.rShoulder], lm[L.rElbow], lm[L.rWrist]) > 155;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Long through the fingertips." : "Straighten the elbows and reach wide.",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
         }
       },
       {
         label: "Torso upright",
         test: (lm) => {
           const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
-          return { ok: t < 18, msg: t < 18 ? "Chest stacked over hips." : "Don't lean over the front leg — lift the torso." };
+          const ok = t < 18;
+          return { ok, msg: ok ? "Chest stacked over hips." : "Don't lean over the front leg — lift the torso.",
+                   marks: [{ segs: TORSO, ok }] };
         }
       },
     ]
@@ -406,6 +470,8 @@ let running = false;
 let stream = null;
 let lastVideoTime = -1;
 let smoothScore = null;
+// Per-line smoothed "aligned" level (0..1) so colours don't flicker frame to frame
+const segSmooth = new Map();
 
 // Build pose picker buttons
 Object.entries(POSES).forEach(([key, p], i) => {
@@ -423,6 +489,8 @@ function selectPose(key) {
   const p = POSES[key];
   poseNameEl.textContent = p.name + "  ·  " + p.sanskrit;
   poseDescEl.textContent = p.desc;
+  segSmooth.clear();
+  smoothScore = null;
   renderCues(null); // reset
   if (typeof resetCoach === "function") resetCoach();
   if (voiceOn && running) speak(p.name + ". " + p.desc);
@@ -543,6 +611,7 @@ function stop() {
   startBtn.disabled = false;
   stopBtn.disabled = true;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  segSmooth.clear();
   setStatus("Stopped.");
   scoreText.textContent = "Waiting…";
   ring.style.setProperty("--pct", 0);
@@ -564,8 +633,8 @@ function loop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (res.landmarks && res.landmarks.length) {
         const lm = res.landmarks[0];
-        drawSkeleton(lm);
-        evaluate(lm);
+        const segState = evaluate(lm);   // work out which lines are aligned first
+        drawSkeleton(lm, segState);      // then draw them in the right colours
       } else {
         setStatus("No body detected — make sure you're fully in frame.");
       }
@@ -594,7 +663,22 @@ function drawMirroredText(text, x, y, color, size) {
 // thresholds used by each pose's own cue, just kept in one place for drawing).
 const SPINE_TOLERANCE_DEG = { mountain: 10, tree: 14, warrior2: 18 };
 
-function drawSkeleton(lm) {
+// segState: Map of line key -> true/false for lines checked by the current pose.
+function segColor(key, segState) {
+  if (!segState.has(key)) return SEG_COLORS.idle;
+  return (segSmooth.get(key) ?? 0) >= 0.5 ? SEG_COLORS.good : SEG_COLORS.bad;
+}
+
+function drawLine(p1, p2, color, width) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.stroke();
+}
+
+function drawSkeleton(lm, segState) {
   const W = canvas.width, H = canvas.height;
 
   // 1) Vertical center guide — helps you frame/center yourself in the shot.
@@ -608,25 +692,35 @@ function drawSkeleton(lm) {
   ctx.stroke();
   ctx.restore();
 
-  // 2) Skeleton connections + joint dots (unchanged).
-  ctx.lineWidth = Math.max(3, W * 0.006);
-  ctx.strokeStyle = "rgba(88,166,255,0.9)";
-  ctx.fillStyle = "#3fb950";
+  // 2) Skeleton — each checked line is red until aligned, then green; unchecked lines grey.
+  const P = (p) => ({ x: p.x * W, y: p.y * H });
+  const base = Math.max(3, W * 0.006);
+  ctx.lineCap = "round";
+  const jointStates = {}; // joint index -> list of colours of lines touching it
   for (const [a, b] of CONNECTIONS) {
-    ctx.beginPath();
-    ctx.moveTo(lm[a].x * W, lm[a].y * H);
-    ctx.lineTo(lm[b].x * W, lm[b].y * H);
-    ctx.stroke();
+    const key = segKey([a, b]);
+    const color = segColor(key, segState);
+    const checked = segState.has(key);
+    drawLine(P(lm[a]), P(lm[b]), color, checked ? base * 1.3 : base);
+    if (checked) {
+      (jointStates[a] = jointStates[a] || []).push(color);
+      (jointStates[b] = jointStates[b] || []).push(color);
+    }
   }
+
+  // Joints: red if any checked line through it is off, green if all are aligned
   const r = Math.max(4, W * 0.008);
   for (const i of Object.values(L)) {
+    const cs = jointStates[i];
+    ctx.fillStyle = !cs ? SEG_COLORS.idle
+      : (cs.includes(SEG_COLORS.bad) ? SEG_COLORS.bad : SEG_COLORS.good);
     ctx.beginPath();
     ctx.arc(lm[i].x * W, lm[i].y * H, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // 3) Shoulder-level and hip-level guides — dashed horizontal lines that
-  // turn green when level, orange when they're not, so you can see which
+  // turn green when level, red when they're not, so you can see which
   // side to lower/raise without reading the checklist.
   const shoulderMid = mid(lm[L.lShoulder], lm[L.rShoulder]);
   const hipMid = mid(lm[L.lHip], lm[L.rHip]);
@@ -638,7 +732,7 @@ function drawSkeleton(lm) {
   ].forEach(({ y, ok }) => {
     ctx.save();
     ctx.setLineDash([5, 6]);
-    ctx.strokeStyle = ok ? "rgba(63,185,80,0.55)" : "rgba(240,136,62,0.65)";
+    ctx.strokeStyle = ok ? "rgba(63,185,80,0.55)" : "rgba(248,81,73,0.65)";
     ctx.lineWidth = Math.max(1.5, W * 0.003);
     ctx.beginPath();
     ctx.moveTo(W * 0.08, y);
@@ -657,7 +751,7 @@ function drawSkeleton(lm) {
   const tiltDeg = tiltFromVertical(hipMid, shoulderMid);
   const tolerance = SPINE_TOLERANCE_DEG[currentPose] ?? 12;
   const spineOk = tiltDeg < tolerance;
-  const spineColor = spineOk ? "#3fb950" : "#f0883e";
+  const spineColor = spineOk ? SEG_COLORS.good : SEG_COLORS.bad;
 
   ctx.save();
   ctx.setLineDash([4, 5]);
@@ -781,18 +875,36 @@ function toggleVoice() {
 voiceBtn.addEventListener("click", toggleVoice);
 
 // ---------- Evaluation ----------
+// Returns a Map of skeleton line key -> aligned (true/false) for colouring.
 function evaluate(lm) {
   const pose = POSES[currentPose];
+  const segState = new Map();
   const results = pose.cues.map(c => {
     const r = c.test(lm);
+    for (const m of (r.marks || [])) {
+      for (const s of m.segs) {
+        const k = segKey(s);
+        // a line is aligned only if EVERY cue that checks it passes
+        segState.set(k, (segState.has(k) ? segState.get(k) : true) && m.ok);
+      }
+    }
     return { label: c.label, ok: r.ok, msg: r.msg };
   });
+
+  // Smooth each line's state so colours don't flicker
+  for (const [k, ok] of segState) {
+    const prev = segSmooth.get(k);
+    const target = ok ? 1 : 0;
+    segSmooth.set(k, prev == null ? target : prev * 0.6 + target * 0.4);
+  }
+
   const passed = results.filter(r => r.ok).length;
   const rawScore = Math.round((passed / results.length) * 100);
   // smooth to reduce jitter
   smoothScore = smoothScore == null ? rawScore : Math.round(smoothScore * 0.7 + rawScore * 0.3);
   renderCues(results, smoothScore);
   coach(results);
+  return segState;
 }
 
 function renderCues(results, score) {
