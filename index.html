@@ -109,6 +109,18 @@
   .score-label { color: var(--muted); font-size: 13px; }
   .score-label strong { color: var(--text); font-size: 15px; display: block; }
 
+  .hold { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 16px; }
+  .hold-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+  .hold-cfg { display: flex; align-items: center; gap: 6px; }
+  .hold-cfg button { padding: 4px 11px; font-size: 16px; line-height: 1; }
+  .hold-cfg span { min-width: 40px; text-align: center; font-weight: 650; }
+  .hold-bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 10px 0 8px; }
+  .hold-bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+  .hold.done .hold-bar > div { background: var(--good); }
+  .hold-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .hold-status { font-size: 13px; color: var(--muted); }
+  .hold.done .hold-status { color: var(--good); font-weight: 600; }
+  .hold-foot button { padding: 5px 10px; font-size: 12.5px; }
   ul.cues { list-style: none; margin: 0; padding: 0; }
   ul.cues li {
     display: flex; gap: 10px; align-items: flex-start;
@@ -165,6 +177,9 @@
       <br><br><strong>🟥🟩 Skeleton colours:</strong> every body line the pose checks starts <span style="color:var(--seg-bad)">red</span>
       and turns <span style="color:var(--good)">green</span> as soon as that part is in alignment — e.g. the line across your
       shoulders goes green when your shoulders are level. When every checked line is green you're at 100%.
+      <br><br><strong>⏱ Hold timer:</strong> once every checked line is green, the timer counts down (10 seconds by default —
+      change it per pose with − / +). If you slip out of alignment it pauses and carries on when you're back in position.
+      <br><br><strong>Half Forward Fold:</strong> stand side-on to the camera so it can see the angle at your hips.
       <br><br><strong>🔊 Voice coaching:</strong> click the button to have the app speak your corrections aloud —
       handy when you're in a pose and can't look at the screen. It speaks the most important fix first,
       waits a few seconds between cues so it isn't chatty, and praises you when your alignment is good.
@@ -187,6 +202,22 @@
       </div>
     </div>
 
+    <div class="hold" id="hold">
+      <div class="hold-top">
+        <strong>⏱ Hold timer</strong>
+        <div class="hold-cfg">
+          <button id="holdMinus" title="5 seconds less">−</button>
+          <span id="holdTarget">10s</span>
+          <button id="holdPlus" title="5 seconds more">+</button>
+        </div>
+      </div>
+      <div class="hold-bar"><div id="holdFill"></div></div>
+      <div class="hold-foot">
+        <span class="hold-status" id="holdStatus">Get every line green to start the timer.</span>
+        <button id="holdReset">Restart</button>
+      </div>
+    </div>
+
     <ul class="cues" id="cues"></ul>
   </div>
 </div>
@@ -200,6 +231,7 @@ import {
 // ---------- Landmark indices (MediaPipe Pose, 33 points) ----------
 const L = {
   nose: 0,
+  lEar: 7, rEar: 8,
   lShoulder: 11, rShoulder: 12,
   lElbow: 13, rElbow: 14,
   lWrist: 15, rWrist: 16,
@@ -390,6 +422,63 @@ const POSES = {
     ]
   },
 
+  warrior1: {
+    name: "Warrior I",
+    sanskrit: "Virabhadrasana I",
+    desc: "Best side-on to the camera. Lunge with the front knee toward 90°, back leg long, both arms reaching straight up, chest lifted.",
+    cues: [
+      {
+        label: "Front knee bent (~90°)",
+        test: (lm) => {
+          const k = kneeAngles(lm);
+          const f = k.l <= k.r ? "l" : "r";
+          const ok = within(k[f], 80, 120);
+          return { ok, msg: ok ? "Strong front knee." : (k[f] > 120 ? "Bend the front knee more toward 90°." : "Ease up — keep the knee over the ankle."),
+                   marks: [{ segs: LEG[f], ok }] };
+        }
+      },
+      {
+        label: "Back leg straight",
+        test: (lm) => {
+          const k = kneeAngles(lm);
+          const b = k.l > k.r ? "l" : "r";
+          const ok = k[b] > 150;
+          return { ok, msg: ok ? "Back leg long and strong." : "Straighten the back leg and press through the back heel.",
+                   marks: [{ segs: LEG[b], ok }] };
+        }
+      },
+      {
+        label: "Arms reaching straight up",
+        test: (lm) => {
+          const up = (sh, wr) => lm[wr].y < lm[L.nose].y && tiltFromVertical(lm[sh], lm[wr]) < 25;
+          const okL = up(L.lShoulder, L.lWrist), okR = up(L.rShoulder, L.rWrist);
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Arms reaching high." : "Reach both arms straight up beside your ears.",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
+        }
+      },
+      {
+        label: "Arms straight",
+        test: (lm) => {
+          const okL = angle(lm[L.lShoulder], lm[L.lElbow], lm[L.lWrist]) > 150;
+          const okR = angle(lm[L.rShoulder], lm[L.rElbow], lm[L.rWrist]) > 150;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Long through the fingertips." : "Straighten the elbows.",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
+        }
+      },
+      {
+        label: "Torso upright",
+        test: (lm) => {
+          const t = tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+          const ok = t < 15;
+          return { ok, msg: ok ? "Chest lifted over the hips." : "Lift the chest — don't lean forward over the front knee.",
+                   marks: [{ segs: TORSO, ok }] };
+        }
+      },
+    ]
+  },
+
   warrior2: {
     name: "Warrior II",
     sanskrit: "Virabhadrasana II",
@@ -446,8 +535,110 @@ const POSES = {
         }
       },
     ]
+  },
+
+  warrior3: {
+    name: "Warrior III",
+    sanskrit: "Virabhadrasana III",
+    desc: "Side-on to the camera. Balance on one straight leg, tip forward so torso and lifted leg form one level line, arms reaching forward.",
+    cues: [
+      {
+        label: "Standing leg straight",
+        test: (lm) => {
+          const s = lm[L.lAnkle].y >= lm[L.rAnkle].y ? "l" : "r";
+          const k = kneeAngles(lm)[s];
+          const ok = k > 160;
+          return { ok, msg: ok ? "Rooted standing leg." : "Straighten the standing leg — a micro-bend is fine.",
+                   marks: [{ segs: LEG[s], ok }] };
+        }
+      },
+      {
+        label: "Lifted leg level & straight",
+        test: (lm) => {
+          const f = lm[L.lAnkle].y >= lm[L.rAnkle].y ? "r" : "l";
+          const hip = f === "l" ? L.lHip : L.rHip, ankle = f === "l" ? L.lAnkle : L.rAnkle;
+          const level = tiltFromHorizontal(lm[hip], lm[ankle]) < 20;
+          const straight = kneeAngles(lm)[f] > 150;
+          const ok = level && straight;
+          return { ok, msg: ok ? "Back leg long and level." : (!level ? "Lift the back leg up to hip height." : "Straighten the lifted leg and reach through the heel."),
+                   marks: [{ segs: LEG[f], ok }] };
+        }
+      },
+      {
+        label: "Torso level with floor",
+        test: (lm) => {
+          const t = tiltFromHorizontal(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+          const ok = t < 20;
+          return { ok, msg: ok ? "Torso level — a perfect T." : "Tip the chest forward until your torso is level with the floor.",
+                   marks: [{ segs: TORSO, ok }] };
+        }
+      },
+      {
+        label: "Arms reaching forward",
+        test: (lm) => {
+          const fwd = (sh, el, wr) => tiltFromHorizontal(lm[sh], lm[wr]) < 25 && angle(lm[sh], lm[el], lm[wr]) > 150;
+          const okL = fwd(L.lShoulder, L.lElbow, L.lWrist), okR = fwd(L.rShoulder, L.rElbow, L.rWrist);
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Reaching long through the fingertips." : "Reach both arms straight forward, in line with your torso.",
+                   marks: [{ segs: ARM.l, ok: okL }, { segs: ARM.r, ok: okR }] };
+        }
+      },
+    ]
+  },
+
+  fold: {
+    name: "Half Forward Fold",
+    sanskrit: "Ardha Uttanasana",
+    desc: "Stand side-on to the camera. Hinge forward from the hips with a long, flat back until the angle between legs and torso is less than 90°. Hands can rest on the floor or shins.",
+    cues: [
+      {
+        label: "Hinged from the hips (< 90°)",
+        test: (lm) => {
+          const s = foldSide(lm);
+          const a = angle(lm[s.ankle], lm[s.hip], foldHead(lm, s));
+          foldHipAngle = a;
+          const ok = a < 90;
+          return { ok, msg: ok ? "Good deep hinge from the hips." : "Hinge further forward from the hips.",
+                   marks: [{ segs: TORSO, ok }] };
+        }
+      },
+      {
+        label: "Back straight",
+        test: (lm) => {
+          const s = foldSide(lm);
+          const a = angle(lm[s.hip], lm[s.shoulder], foldHead(lm, s));
+          const ok = a > 150;
+          return { ok, msg: ok ? "Long, flat back." : "Lengthen your spine — reach the crown of your head forward, don't round.",
+                   marks: [{ segs: TORSO, ok }] };
+        }
+      },
+      {
+        label: "Legs straight",
+        test: (lm) => {
+          const k = kneeAngles(lm);
+          const okL = k.l > 155, okR = k.r > 155;
+          const ok = okL && okR;
+          return { ok, msg: ok ? "Legs long and steady." : "Straighten your legs — a soft bend in the knees is fine.",
+                   marks: [{ segs: LEG.l, ok: okL }, { segs: LEG.r, ok: okR }] };
+        }
+      },
+    ]
   }
 };
+
+// Side-view helpers for the forward fold: use whichever side the camera sees best.
+let foldHipAngle = null;
+function foldSide(lm) {
+  const vis = (i) => lm[i].visibility ?? 1;
+  const left = vis(L.lHip) + vis(L.lKnee) + vis(L.lAnkle) + vis(L.lShoulder);
+  const right = vis(L.rHip) + vis(L.rKnee) + vis(L.rAnkle) + vis(L.rShoulder);
+  return left >= right
+    ? { hip: L.lHip, ankle: L.lAnkle, shoulder: L.lShoulder, ear: L.lEar }
+    : { hip: L.rHip, ankle: L.rAnkle, shoulder: L.rShoulder, ear: L.rEar };
+}
+function foldHead(lm, s) {
+  return (lm[s.ear].visibility ?? 1) > 0.4 ? lm[s.ear] : lm[L.nose];
+}
 
 // ---------- App state / DOM ----------
 const video = document.getElementById("video");
@@ -491,7 +682,9 @@ function selectPose(key) {
   poseDescEl.textContent = p.desc;
   segSmooth.clear();
   smoothScore = null;
+  foldHipAngle = null;
   renderCues(null); // reset
+  if (typeof resetHold === "function") resetHold();
   if (typeof resetCoach === "function") resetCoach();
   if (voiceOn && running) speak(p.name + ". " + p.desc);
 }
@@ -612,6 +805,7 @@ function stop() {
   stopBtn.disabled = true;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   segSmooth.clear();
+  resetHold();
   setStatus("Stopped.");
   scoreText.textContent = "Waiting…";
   ring.style.setProperty("--pct", 0);
@@ -724,15 +918,16 @@ function drawSkeleton(lm, segState) {
   // side to lower/raise without reading the checklist.
   const shoulderMid = mid(lm[L.lShoulder], lm[L.rShoulder]);
   const hipMid = mid(lm[L.lHip], lm[L.rHip]);
-  const shoulderLevel = Math.abs(lm[L.lShoulder].y - lm[L.rShoulder].y) < 0.04;
-  const hipLevel = Math.abs(lm[L.lHip].y - lm[L.rHip].y) < 0.05;
+  // Only colour a guide if the current pose actually checks it; otherwise grey.
   [
-    { y: shoulderMid.y * H, ok: shoulderLevel },
-    { y: hipMid.y * H, ok: hipLevel },
-  ].forEach(({ y, ok }) => {
+    { y: shoulderMid.y * H, key: "11-12" },
+    { y: hipMid.y * H, key: "23-24" },
+  ].forEach(({ y, key }) => {
+    const c = segColor(key, segState);
     ctx.save();
     ctx.setLineDash([5, 6]);
-    ctx.strokeStyle = ok ? "rgba(63,185,80,0.55)" : "rgba(248,81,73,0.65)";
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = c;
     ctx.lineWidth = Math.max(1.5, W * 0.003);
     ctx.beginPath();
     ctx.moveTo(W * 0.08, y);
@@ -749,8 +944,10 @@ function drawSkeleton(lm, segState) {
   const hipPx = { x: hipMid.x * W, y: hipMid.y * H };
   const shoulderPx = { x: shoulderMid.x * W, y: shoulderMid.y * H };
   const tiltDeg = tiltFromVertical(hipMid, shoulderMid);
-  const tolerance = SPINE_TOLERANCE_DEG[currentPose] ?? 12;
-  const spineOk = tiltDeg < tolerance;
+  // Colour follows the pose's own torso check (upright for standing poses, hinged for the fold).
+  const spineOk = segState.has("spine")
+    ? segColor("spine", segState) === SEG_COLORS.good
+    : tiltDeg < (SPINE_TOLERANCE_DEG[currentPose] ?? 12);
   const spineColor = spineOk ? SEG_COLORS.good : SEG_COLORS.bad;
 
   ctx.save();
@@ -778,13 +975,24 @@ function drawSkeleton(lm, segState) {
     ctx.fill();
   });
 
+  const readout = (currentPose === "fold" && foldHipAngle != null) ? `hip ${foldHipAngle.toFixed(0)}°`
+    : currentPose === "warrior3" ? `${(90 - tiltDeg).toFixed(0)}° from level`
+    : `${tiltDeg.toFixed(0)}°`;
   drawMirroredText(
-    `${tiltDeg.toFixed(0)}°`,
+    readout,
     (hipPx.x + shoulderPx.x) / 2 - W * 0.06,
     (hipPx.y + shoulderPx.y) / 2,
     spineColor,
     Math.max(14, Math.round(W * 0.022))
   );
+
+  // 5) Hold countdown, big and centred at the top of the video
+  if (holdStarted) {
+    const left = Math.max(0, Math.ceil(holdTarget() - holdElapsed));
+    drawMirroredText(holdDone ? "✓" : String(left), W / 2, H * 0.1,
+      holdDone ? SEG_COLORS.good : (holdActive ? "#ffffff" : "rgba(255,255,255,0.45)"),
+      Math.max(36, Math.round(W * 0.08)));
+  }
 }
 
 // ---------- Voice coaching (Web Speech API — built in, offline) ----------
@@ -849,7 +1057,8 @@ function coach(results) {
       lastSpeakAt = now;
     }
   } else if (!praiseGiven && now - lastSpeakAt > 1500) {
-    speak(PRAISES[Math.floor(Math.random() * PRAISES.length)]);
+    const p = PRAISES[Math.floor(Math.random() * PRAISES.length)];
+    speak(holdDone ? p : p.replace(/ Hold.*$| Stay.*$/, "") + " Hold for " + Math.ceil(holdTarget() - holdElapsed) + " seconds.");
     praiseGiven = true;
     lastCueSpoken = "";
     lastSpeakAt = now;
@@ -873,6 +1082,68 @@ function toggleVoice() {
   }
 }
 voiceBtn.addEventListener("click", toggleVoice);
+
+// ---------- Hold timer (per pose, default 10 s, remembered on this device) ----------
+const HOLD_DEFAULT = 10, HOLD_STEP = 5, HOLD_MIN = 5, HOLD_MAX = 120;
+const holdEl = document.getElementById("hold");
+const holdTargetEl = document.getElementById("holdTarget");
+const holdFill = document.getElementById("holdFill");
+const holdStatus = document.getElementById("holdStatus");
+let holdTargets = {};
+try { holdTargets = JSON.parse(localStorage.getItem("samajyoga.holdTargets") || "{}") || {}; } catch (e) { holdTargets = {}; }
+let holdElapsed = 0, holdStarted = false, holdDone = false, holdActive = false;
+let lastHoldTick = null, lastAlignedAt = 0, fiveSecSaid = false;
+
+function holdTarget() { return holdTargets[currentPose] ?? HOLD_DEFAULT; }
+function setHoldTarget(sec) {
+  holdTargets[currentPose] = Math.min(HOLD_MAX, Math.max(HOLD_MIN, sec));
+  try { localStorage.setItem("samajyoga.holdTargets", JSON.stringify(holdTargets)); } catch (e) {}
+  resetHold();
+}
+function resetHold() {
+  holdElapsed = 0; holdStarted = false; holdDone = false; holdActive = false;
+  lastHoldTick = null; fiveSecSaid = false; praiseGiven = false;
+  renderHold();
+}
+function renderHold() {
+  const t = holdTarget();
+  holdTargetEl.textContent = t + "s";
+  holdFill.style.width = Math.min(100, (holdElapsed / t) * 100) + "%";
+  holdEl.classList.toggle("done", holdDone);
+  const left = Math.max(0, Math.ceil(t - holdElapsed));
+  holdStatus.textContent =
+    holdDone ? "Hold complete ✓ — nice work!" :
+    !holdStarted ? "Get every line green to start the timer." :
+    holdActive ? "Holding… " + left + "s left" :
+    "Paused — realign to continue (" + left + "s left)";
+}
+function updateHold(allOk) {
+  const now = performance.now();
+  const dt = lastHoldTick == null ? 0 : Math.min((now - lastHoldTick) / 1000, 0.25);
+  lastHoldTick = now;
+  if (holdDone) return;
+  if (allOk) { lastAlignedAt = now; holdStarted = true; }
+  // brief tracking wobbles (under 0.6 s) don't pause the clock
+  holdActive = holdStarted && now - lastAlignedAt < 600;
+  if (holdActive) {
+    holdElapsed += dt;
+    const left = holdTarget() - holdElapsed;
+    if (!fiveSecSaid && holdTarget() >= 10 && left <= 5 && left > 4) {
+      fiveSecSaid = true;
+      speak("Five more seconds.");
+      lastSpeakAt = now;
+    }
+    if (left <= 0) {
+      holdDone = true; holdActive = false;
+      speak("Well done. Release the pose.");
+      lastSpeakAt = now;
+    }
+  }
+  renderHold();
+}
+document.getElementById("holdMinus").addEventListener("click", () => setHoldTarget(holdTarget() - HOLD_STEP));
+document.getElementById("holdPlus").addEventListener("click", () => setHoldTarget(holdTarget() + HOLD_STEP));
+document.getElementById("holdReset").addEventListener("click", resetHold);
 
 // ---------- Evaluation ----------
 // Returns a Map of skeleton line key -> aligned (true/false) for colouring.
@@ -901,8 +1172,9 @@ function evaluate(lm) {
   const passed = results.filter(r => r.ok).length;
   const rawScore = Math.round((passed / results.length) * 100);
   // smooth to reduce jitter
-  smoothScore = smoothScore == null ? rawScore : Math.round(smoothScore * 0.7 + rawScore * 0.3);
-  renderCues(results, smoothScore);
+  smoothScore = smoothScore == null ? rawScore : smoothScore * 0.7 + rawScore * 0.3;
+  renderCues(results, Math.round(smoothScore));
+  updateHold(results.every(r => r.ok));
   coach(results);
   return segState;
 }
