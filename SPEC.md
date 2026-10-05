@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.7 |
+| **Spec version** | 1.8 |
 | **Date** | 2026-10-05 |
-| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "v1.7: bolder pose outline; pose queue moved to the corner of the camera view" |
+| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "v1.8: Studio Calm redesign — home and session screens for phone, iPad and laptop" |
 | **Live URL** | https://manishchhaya-rgb.github.io/SamajYoga/ |
 
 **Purpose of this document:** anyone (or Claude) given only this file should be able to rebuild the app so it behaves the same. Every threshold, colour, message and timing that affects behaviour is listed here. It is updated with every change to the app, and the version number goes up each time.
@@ -29,8 +29,8 @@ Everything runs on the device. No video or data leaves the machine; only the pos
 
 - **One file:** `index.html` containing all HTML, CSS and JavaScript (`<script type="module">`). No build step, no server code.
 - **Hosting:** GitHub Pages (repo root, `main` branch). Must be served over http(s). Chrome blocks the camera on `file://` pages.
-- **Browsers:** current Chrome (desktop and Android) and Safari (iPhone/iPad). Must work at phone width.
-- **iOS home-screen app feel:** meta tags `apple-mobile-web-app-capable=yes`, status bar `black-translucent`, title "Yoga Teacher", `mobile-web-app-capable=yes`, `theme-color=#0e1116`. Viewport: `width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover`.
+- **Devices and browsers:** phone, iPad (portrait and landscape) and laptop — current Chrome (desktop and Android) and Safari (iPhone/iPad/Mac). The layout adapts to each (§4).
+- **iOS home-screen app feel:** meta tags `apple-mobile-web-app-capable=yes`, status bar `default`, title "Yoga Teacher", `mobile-web-app-capable=yes`, `theme-color=#F3F1EC`. Viewport: `width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover`.
 - **Page title:** "Yoga Teacher — Pose Coach".
 
 ## 3. External dependencies
@@ -41,49 +41,77 @@ Everything runs on the device. No video or data leaves the machine; only the pos
 | WASM files | Try `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm`, then fall back to `https://unpkg.com/@mediapipe/tasks-vision@0.10.12/wasm` |
 | Pose model | `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task` |
 | Speech | Browser built-in Web Speech API (`speechSynthesis`) — no download |
+| Fonts | Google Fonts: **Fraunces** (opsz 9..144, weights 400/500/600) for headings and numbers, **Manrope** (400–800) for everything else, via `fonts.googleapis.com` `css2` with `display=swap`. Fallbacks: Georgia/Times for Fraunces; the system sans stack for Manrope. |
 
 **Model options:** `runningMode: "VIDEO"`, `numPoses: 1`, `minPoseDetectionConfidence`, `minPosePresenceConfidence`, `minTrackingConfidence` all `0.5`. Try `delegate: "GPU"` first; if that fails, try `"CPU"`.
 
-## 4. Screen layout
+## 4. Screen layout — "Studio Calm" design
 
-Dark theme. The main screen is for **doing yoga**; editing the sequence and the help text live in a **side menu** (drawer).
+A light, calm look: warm stone background, white cards, sage-green accent, serif headings. The app has **two screens** — **Home** and **Session** — plus a **side menu** (drawer). Only one screen shows at a time (`hidden` on the other); switching scrolls to the top.
 
-**Header** (padding 12px 16px, respects the top safe area): "☰" menu button (opens the drawer), "🧘 Yoga Teacher" (18px, weight 650), muted tagline "Live posture coaching — everything runs on your device." (hidden below 600px width), and on the right the voice button "🔊 Voice on" (green outline) / "🔇 Voice off".
+**Design tokens (CSS variables):**
 
-**Main area** is a grid with three areas: *top* (camera + controls), *bottom* (sequence summary + single-pose picker) and *side* (coaching panels).
-- Wide screens (> 860px): two columns, left `minmax(0,1.5fr)`, right `minmax(280px,0.85fr)`; *top* above *bottom* on the left, *side* on the right spanning both rows and sticky (top 12px). Column gap 18px, padding 16px 18px.
-- Narrow screens (≤ 860px): one column in the order **top → side → bottom**, so the coaching panel sits directly under the camera. Gap 14px, padding 12px.
+| Token | Value | Use |
+|---|---|---|
+| `--bg` | `#F3F1EC` | page background (warm stone) |
+| `--card` | `#FFFFFF` | cards, pills, on-video overlays |
+| `--ink` | `#1F2A24` | main text |
+| `--muted` | `#5C665F` | secondary text |
+| `--line` | `#DAD6CC` | borders, empty progress segments |
+| `--line-soft` | `#E6E2D8` | dividers, empty bars, card shadow (0 1px 0) |
+| `--sage` | `#4F6E5B` | accent: primary button, icons, links, progress, good score |
+| `--sage-dark` | `#3A5444` | primary button hover |
+| `--sage-mid` | `#9DB3A4` | current progress segment, focus ring |
+| `--sage-soft` | `#E6ECE5` | icon tiles, "Now" row, good badges |
+| `--good-text` | `#2F6B45` | "inside the outline", ✓ marks |
+| `--amber` / `--amber-soft` | `#9A4F1E` / `#F6E6D8` | corrections and wrong-way prompts |
+| `--camera` | `#46534B` | camera card behind the video |
 
-**Top area, in order:**
-1. **Stage:** black box, 14px rounded corners, 1px border, centred. Its aspect ratio is set to the camera's (`videoWidth / videoHeight`, default 4:3) and its width is `min(100%, 70vh × aspect)`, so the whole camera picture is visible and the overlay lines up exactly. It contains the `<video>` (`playsinline muted`, `object-fit: contain`) and a `<canvas>` overlay filling it; **both are mirrored with CSS `transform: scaleX(-1)`**. Before the camera starts, a centred placeholder shows 📷 and "Press **▶ Start sequence** (or pick a single pose) and allow camera access. Stand back far enough that your whole body is visible." On top of the stage (normal, un-mirrored HTML) sit three overlays — see §11a:
-   - **pose chip** (top-left): "{Pose name} · {facing badge}";
-   - **facing card** (centre);
-   - **placement hint** (bottom-centre pill);
-   - **pose queue** (top-right) — see below.
-2. **Legend:** outline swatch "Target pose — fit inside it" (18×10 box, 2px `#bfe3ff` border, 18% fill), red "Needs adjusting", green "Aligned", grey "Not checked".
-3. **Controls:** "▶ Start sequence" (primary blue, larger; while a sequence runs it becomes "■ Stop sequence" with an orange outline; disabled if the sequence is empty) and "📷 Start camera" / "■ Stop camera" (for single-pose practice).
-4. **Status line:** 13px, muted; orange for errors.
+Fonts: `--serif` Fraunces (headings, pose name, score, queue countdown, wordmark), `--sans` Manrope (everything else). Focus ring: 3px `--sage-mid`, offset 2px. Shared controls: **round button** 44×44, radius 22, 1px `--line` border, white; **pill button** 44 high, radius 22, 14px/600 with a 16px icon; **primary button** 56 high, radius 28, `--sage` fill, white 17px/700 text with a play icon; **small button** 34 high, radius 17, 13px/600; **text button** sage 14px/700, no border. Icons are inline line SVGs (stroke `currentColor`), never emoji.
 
-**Bottom area:**
-1. **Or practise a single pose:** one button per pose (outline icon 28px + name), order Mountain Pose, Tree Pose, Warrior I, Warrior II, Warrior III, Half Forward Fold. The active pose has a blue border and background `#14263f`. Clicking one stops any running sequence and selects that pose.
-2. One muted line: "Your sequence is shown in the top-right corner of the camera view. ☰ Menu: edit your sequence, help & tips."
+### 4.1 Home screen
 
-**Side area** (panels stacked, gap 14px):
-1. **Sequence run panel** (only while a sequence is running or has just finished) — see §9a.
-2. **Coaching panel:** pose title "Name  ·  Sanskrit"; a **facing badge** pill ("👤 Face the camera" or "↔ Stand side-on"; when the user is turned the wrong way it turns orange and reads "⚠ Turn to face the camera" / "⚠ Turn side-on to the camera"); the pose description; the **score ring** (76px conic ring with the number; label "Waiting…", "Keep adjusting" (<50), "Getting there…" (50–79) or "Great alignment!" (≥80) over "Alignment score"; colour green ≥80, blue 50–79, orange <50; "—" when idle); the **hold timer box** (§9); the **cue checklist** (one row per cue: round badge ✓ green / ! orange / • grey idle with "Get into position…", the cue label and a one-line message).
+- **Top bar** (max-width 1280, padding 14px 20px, respects the top safe area): round menu button (☰ lines; opens the drawer), the wordmark "SamajYoga" (Fraunces 20px/600) in the middle, round voice button on the right (§10).
+- **Content** (max-width 1080, centred, padding 8px 20px 32px):
+  - Greeting: "{weekday} {morning|afternoon|evening}" (from the device clock: before 12 / before 18 / after; 14px muted) over the heading **"Your practice"** (Fraunces 34px; 42px from 820px width).
+  - **Sequence card** (white, radius 24): "Today's sequence" (15px bold) + "Edit" text button (opens the drawer); a meta line "N poses · {total} of holding · one turn / N turns" (turns = the number of times facing changes between consecutive steps; left out if 0); then one row per step (min-height 52): a 42px sage-soft tile with the pose's outline icon (§7.7 icon, sage), the short name (pose name without " Pose"; 15px/600) over "Face the camera" or "Side-on" (12.5px muted), and "N s" on the right. Wherever the facing changes between two steps, a divider row is inserted: turn-arrow icon + "Then turn side-on" / "Then face the camera" (sage 12.5px/700) followed by a 1px line. Empty: "Your sequence is empty — tap Edit to add poses."
+  - **"Begin practice"** primary button (disabled when the sequence is empty) — starts the sequence (§9a).
+  - Status line (13px muted; amber for errors) — e.g. the file:// warning.
+  - **"Practise one pose"** (14px bold) with one tile per pose (outline icon 40px, short name 12.5px/600, facing 11px muted; 96px high, radius 18, 1px border). Tapping a tile selects that pose and opens the Session screen.
+  - **Tips card**: three rows (34px sage-soft icon tile + bold title + muted text): "Head to toe — Prop your device so the camera sees your whole body." / "Step into the outline — Each pose appears as an outline — fit your body inside it." / "Listen for cues — The voice tells you which way to face and what to adjust."
+- **Phone (< 820px):** one column in the order greeting → sequence card → Begin → status → pose tiles (a single horizontally scrolling row, tiles 92px wide, edge to edge) → tips.
+- **iPad and laptop (≥ 820px):** two columns (`1.15fr` / `1fr`, gap 28): left = sequence card, Begin, status; right = pose tiles (3-column grid) and tips.
 
-**Side menu (drawer):** fixed to the left edge, full height, width `min(390px, 92vw)`, panel colour, slides in from the left (transform, 0.25 s). A dark backdrop (55% black) covers the page; clicking it, the "✕" button or pressing Esc closes the drawer. Opened by "☰" or the queue's "✎ Edit". Contents: title "📋 My sequence" + "✕"; sub-text "The poses you'll be coached through, in order, and how long to hold each. Saved on this device — change it any time."; the **step editor** (§9a); "+ Add pose" and "Reset to default"; the total line; a full-width primary "▶ Start this sequence" (closes the drawer and starts); then a collapsible "❓ Help & tips" section (12.5px muted) covering: set-up and privacy; the outline; facing the camera vs side-on; skeleton colours; hold timer; My sequence (incl. that the default does the facing poses first so you only turn once); voice; and what to do if the model won't download (run `python3 -m http.server 8000`, open `http://localhost:8000/index.html`).
+### 4.2 Session screen
 
-**Pose outline icons** (used in the picker, the pose queue, the step editor and the facing card) are small SVGs drawn from the same outline data as §7.7: each bone a round-capped line in `currentColor` (`#bfe3ff`) with stroke width 0.75 × the bone's thickness, the head a filled circle, in a square viewBox fitted to the pose's bounding box (+0.02 padding), y flipped so up is up.
+- **Top bar:** pill button "✕ End" (stops the camera and any sequence, returns Home); in the middle the progress label — "Pose N of M" during a sequence, "Sequence complete" when finished, "Practising one pose" otherwise — with, during/after a sequence, one 4px segment per step (max 26px each, row width min(200px, 46vw)): done = sage, current = sage-mid, upcoming = `--line`; on the right the round voice button.
+- **Stage** (camera card): radius 28 (22 on ≤ 480px), background `--camera`, aspect ratio = the camera's (`videoWidth/videoHeight`, default 4:3), width `min(100%, stage-max-height × aspect)`, centred. It holds the `<video>` (`playsinline muted`, `object-fit: contain`) and the `<canvas>`; **both mirrored with `transform: scaleX(-1)`**. While the camera is off a centred placeholder shows a camera icon and a message ("Starting the camera…", an error message — light orange `#FFE2CC` for errors — or "Camera off."). Un-mirrored overlays (white, §11a): facing **chip** (top-left), **pose queue** (top-right), **facing card** (centre), **completion card** (centre), **placement hint** (bottom-centre).
+- **Coaching panel:**
+  - **Pose head:** short pose name (Fraunces 30px) over the Sanskrit name (13px italic muted); on the right the **score** "N%" (Fraunces 32px/600; "%" at 16px) over "alignment" (12px muted). Score colour: sage when ≥ 80, amber when < 50, muted otherwise; "—" when idle.
+  - **Coach card** (white, radius 20): a 38px round badge with an icon + a bold 15.5px title over a 13px muted line. It always shows the single most useful thing to do now (first match):
+    1. camera not running: camera icon, "Camera off" / "Press End to go back, then begin again." (while starting: "Starting the camera…" / "Allow camera access if your browser asks.");
+    2. model not loaded: "Getting ready…" / "Loading the pose tracker. Step back so your whole body is in view.";
+    3. no body: person icon, "Step into view" / "Your whole body should be visible, head to toe.";
+    4. facing wrong (§11a): amber badge, turn icon, "Turn to face the camera" / "Turn side-on to the camera", "The outline shows the pose from this angle.";
+    5. a cue failing: amber badge, target icon, the **first failing cue's message** as the title and its label as the sub-line;
+    6. hold complete: sage badge, check icon, "Hold complete — well done" / "Moving on in a moment…" (sequence) or "Release the pose when you're ready.";
+    7. otherwise: check icon, "Lovely — hold it there" / "All N checks are green."
+  - **Hold** (§9): status text (left) and "E of T s" (right, 13px/600 muted; green when done), an 8px bar (sage on `--line-soft`), then tools: in single-pose practice "−  Ns  +"; always "Restart hold"; during a sequence "Skip pose ⏭".
+  - **Description** (14px muted).
+  - **Checks card** (white): "Checks · P of N aligned" (13px/700 muted; just "Checks" when idle), then one row per cue: a 20px round dot (✓ sage-soft/good-text, ! amber-soft/amber, • grey when idle with the message "Get into position…"), the cue label and its message (12.5px muted).
+  - **Legend** (12px muted): outline swatch "Target outline", red "Adjust" (`#F0504F`), green "Aligned" (`#34C46A`), grey "Not checked".
+  - **Status line** (13px; amber for errors).
+- **Layouts:**
+  - **Phone (< 700px):** one column — stage (max height 58vh), pose head, coach card, hold, description, checks, legend, status.
+  - **iPad portrait / narrow windows (700–1023px, unless landscape ≥ 900px):** stage on top (max height 60vh); below it the pose head across the full width, then two columns: left = coach card, hold, description; right = checks, legend.
+  - **Laptop and iPad landscape (≥ 1024px, or ≥ 900px in landscape):** two columns — stage on the left (max height `100vh − 110px`), coaching panel on the right (360px, sticky at top 12px) with everything stacked.
+  - ≤ 480px: tighter side padding (12px), smaller chip and queue (§11a).
 
-**Pose queue** (top-right corner of the stage, `rgba(14,17,22,.84)` panel with 4px backdrop blur, 1px border, 12px radius, padding 6px, max-width 46%, min-width 120px; 12.5px text). It is always shown and is rebuilt on pose change, step change, sequence start/stop/finish, sequence edits and hold-target changes:
-- **Sequence running:** header "Step N / M" + small "✎ Edit" button (opens the drawer). Then a window of steps — wide screens: 1 finished step before the current one and up to 4 after; phones (≤ 600px): the current step and up to 2 after. Hidden earlier steps show as "✓ K done", hidden later steps as "+K more". Each row: outline icon (22px; 18px on phones) + pose name (names hidden on phones except the current row) + seconds on the right ("✓" in green for finished rows, which are at 45% opacity). The **current row** has a blue border and background `#14263f`, a 34px icon (26px on phones), a bold name, and the **live hold countdown** on the right (26px extra-bold; 22px on phones).
-- **Not running:** header "Practising" + "✎ Edit"; one current row for the selected pose with its countdown; then a small button "▶ Sequence (N)" that starts the sequence (or "✎ Build a sequence" opening the drawer if it's empty).
-- **Countdown text:** before the timer starts, the target as "Ns" (muted, 16px); while active, the remaining whole seconds (white); while paused, the same at 50% opacity; when done, a green "✓". It updates every time the hold timer renders.
+### 4.3 Side menu (drawer)
 
-On phones the pose chip is limited to 50% of the stage width with an ellipsis, so it never runs into the queue.
+Fixed to the left edge, full height, width `min(400px, 92vw)`, background `--bg`, slides in from the left (0.25 s); a backdrop `rgba(31,42,36,.35)` covers the page. Opened from the Home menu button or "Edit"; closed by the ✕ round button, the backdrop or Esc. Contents: heading "Your sequence" (Fraunces 24px); sub-text "The poses you'll be coached through, in order, and how long to hold each. Saved on this device — change it any time."; the **step editor** (§9a); "+ Add pose" and "Reset to default" small buttons; the total line; a primary "Begin practice" button (closes the drawer and starts the sequence); a collapsible "Help & tips" section covering set-up and privacy, the outline, facing, skeleton colours, the hold timer, the sequence (default turns once), voice, and what to do if the model won't download (`python3 -m http.server 8000`, then `http://localhost:8000/index.html`).
 
-**Colours (CSS variables):** bg `#0e1116`, panel `#161b22`, panel-2 `#1c232d`, text `#e6edf3`, muted `#9aa7b4`, good `#3fb950`, bad (UI orange) `#f0883e`, accent `#58a6ff`, line `#2b3440`, seg-bad (skeleton red) `#f85149`, ghost (outline) `#bfe3ff`. System font stack. Buttons have 10px radius, padding 10px 14px, and a blue border on hover.
+**Pose outline icons** (sequence rows, tiles, step editor, queue, facing card) are small SVGs drawn from the outline data in §7.7: each bone a round-capped line in `currentColor` with stroke width 0.75 × the bone's thickness, the head a filled circle, in a square viewBox fitted to the pose's bounding box (+0.02 padding), y flipped so up is up.
 
 ## 5. Body landmarks used
 
@@ -211,7 +239,7 @@ Each pose has an outline ("template") of the target shape **as seen on screen** 
 
 1. Run every cue of the current pose.
 2. **Line state:** for each line named in any mark, the line is aligned only if **every** mark that touches it is ok (logical AND across cues and marks). Lines not named by any mark are "unchecked".
-3. **Line smoothing:** each checked line keeps a value between 0 and 1: `new = old × 0.6 + (aligned ? 1 : 0) × 0.4` (the first frame takes 0 or 1 directly). It is drawn **green if ≥ 0.5, red otherwise**. Unchecked lines are grey `rgba(154,167,180,0.55)`. Reset on pose change and on Stop.
+3. **Line smoothing:** each checked line keeps a value between 0 and 1: `new = old × 0.6 + (aligned ? 1 : 0) × 0.4` (the first frame takes 0 or 1 directly). It is drawn **green if ≥ 0.5, red otherwise**. Unchecked lines are white at 55% `rgba(255,255,255,0.55)`. Reset on pose change and on Stop.
 4. **Score:** raw = round(passed cues ÷ total cues × 100). Smoothed = `old × 0.7 + raw × 0.3`, kept as an unrounded number (so it can actually reach 100) and **rounded only for display**. Reset on pose change.
 5. Update the checklist and ring, then the hold timer (§9), then voice (§10).
 6. If no body is detected: status "No body detected — make sure you're fully in frame." and the canvas is cleared.
@@ -219,17 +247,14 @@ Each pose has an outline ("template") of the target shape **as seen on screen** 
 ## 9. Hold timer
 
 - **Outside a sequence (single-pose practice):** per-pose target, **default 10 s**, adjusted with − / + in **5 s steps**, limited to **5–120 s**. Saved per pose in `localStorage` under key `samajyoga.holdTargets` as JSON `{poseKey: seconds}`. Every storage read and write is wrapped in try/catch, and the app must work without storage. Changing the target restarts the timer.
-- **During a sequence:** the target is the current step's seconds, and the panel's − / + buttons are disabled.
+- **During a sequence:** the target is the current step's seconds (the − / + control is hidden).
 - "All ok" means every cue in the current pose passes on that frame.
 - The timer starts the first time all cues pass. After that it is **active** while the last all-ok frame was less than **0.6 s** ago (short tracking wobbles don't pause it). Time is added only while active; each frame adds at most 0.25 s.
 - **Voice** (only if voice coaching is on): once remaining time drops to 5 s or below while above 4 s, say "Five more seconds." once, but only if the target is ≥ 10 s. At 0 s, mark it done and say "Well done. Release the pose."
-- **Panel status text:**
-  - not started: "Get every line green to start the timer."
-  - active: "Holding… Ns left"
-  - paused: "Paused — realign to continue (Ns left)"
-  - done: "Hold complete ✓ — nice work!" (green, bold; the bar turns green)
-- **Progress bar:** 8px, fill width = elapsed ÷ target (blue, green when done).
-- **Reset** (elapsed back to 0, not started, not done) happens on: pose change, Stop, the Restart button, and changing the target. Reset also clears the voice "praise given" flag.
+- **Panel text** (§4.2): not started "Hold · starts when every line is green"; active "Holding — keep breathing"; paused "Hold · paused until all green"; done "Hold complete ✓" (green). Right-hand count "E of T s" (E = whole seconds held, capped at T); "T s" when done.
+- **Progress bar:** 8px, fill width = elapsed ÷ target, sage.
+- **Single-pose practice** shows the − / + target control; during a sequence it is hidden and "Skip pose ⏭" is shown instead.
+- **Reset** (elapsed back to 0, not started, not done) happens on: pose change, Stop, the "Restart hold" button, and changing the target. Reset also clears the voice "praise given" flag.
 - When a hold completes, it notifies the sequence (§9a), which moves on if a sequence is running.
 
 ## 9a. My sequence
@@ -253,29 +278,27 @@ Total "6 poses · 1 min 50 s of holding".
 
 **Pose choices** come straight from the pose table, so a new pose automatically appears in the step editor's menus and the single-pose picker.
 
-**Step editor (in the drawer):** one card per step, a grid with two rows: row 1 = step number · outline icon (32px) · pose dropdown (options are the pose names, with " (side-on)" added for side poses); row 2 (under the dropdown) = seconds control (− button, number input 5–300 in steps of 5, "s", + button; ±5 s) on the left and ↑ ↓ ✕ on the right. ↑ is disabled on the first card and ↓ on the last. During a run the current step has a blue border and background `#14263f`, finished steps are at 55% opacity, and **every edit control is disabled**. Empty list: "Your sequence is empty — press “+ Add pose” to start building it."
+**Step editor (in the drawer):** one white card per step (radius 16, padding 10), a grid with two rows: row 1 = step number (13px/700 muted) · 40px sage-soft tile with the outline icon · pose dropdown (options are the pose names, with " (side-on)" added for side poses); row 2 (under the dropdown) = seconds control (− button, number input 5–300 in steps of 5, "s", + button; ±5 s) on the left and ↑ ↓ ✕ on the right (36×36 buttons, radius 10). Inputs use the page background, 1px `--line` border, radius 10, 15px text. ↑ is disabled on the first card and ↓ on the last. During a run the current step has a sage border and sage-soft background, finished steps are at 55% opacity, and **every edit control is disabled**. Empty list: "Your sequence is empty — press “+ Add pose” to start building it."
 - "+ Add pose" appends a step with the same pose as the last step (or the first pose if empty) at 10 s.
 - "Reset to default" asks "Replace your sequence with the default one (all six poses — facing the camera first, then side-on)?" and, if confirmed, restores the default.
-- Add, Reset and "▶ Start this sequence" are disabled during a run; Start is also disabled when the list is empty.
-- **Total line:** "N pose(s) · {total} of holding", the time as "X s", "X min" or "X min Y s"; blank when empty. The same text is shown next to "Your sequence" on the main screen.
+- Add and Reset are disabled during a run; the drawer's "Begin practice" is disabled during a run or when the list is empty.
+- **Total line:** "N pose(s) · {total} of holding", the time as "X s", "X min" or "X min Y s"; blank when empty.
+- Every change re-renders the Home sequence card (§4.1), the session progress bar and the pose queue.
 
-**Sequence run panel** (side area; blue border, background `#14263f`; hidden unless running or just finished):
-- line 1 (bold): "Step N of M: {Pose name} · {secs}s";
-- line 2 (muted): before the hold is done "Up next: {name} · {secs}s" or "Last pose"; after it's done "Next: {name} in a moment…" or "Last pose done — finishing…";
-- buttons "Skip ⏭" and "Stop sequence";
-- after the last step: "Sequence complete ✓ — great work!" with line 2 empty.
+**While a sequence runs** the Session top bar shows "Pose N of M" with segments, the pose queue shows "Now" and what's next (§11a), and the hold area shows "Skip pose ⏭".
 
 **Running:**
-- **Start** (main "▶ Start sequence" or the drawer's "▶ Start this sequence"): unlock speech (§10), mark active, clear the outline's floor position, go to step 1, and start the camera if it isn't running.
-- **Go to step i:** select that step's pose (resets the hold timer to the step's seconds and announces the pose — §10), then refresh the editor, strip and run panel.
-- When a hold completes (the timer says "Well done. Release the pose."), wait **3 s**, then go to the next step. After the last step: say "Sequence complete. Great work.", mark inactive and finished, reset the hold timer, unlock editing.
-- **Skip ⏭:** next step immediately (or finish on the last). **Stop sequence** (run panel or the main button): cancel any pending step change, mark inactive, reset the hold timer, hide the run panel.
-- Picking a single pose stops the sequence first. Stopping the camera stops the sequence. If the camera fails to start, the sequence is stopped.
+- **Start** (Home "Begin practice" or the drawer's "Begin practice"): unlock speech (§10), mark active, clear the outline's floor position, hide the completion card, show the Session screen, go to step 1, and start the camera if it isn't running.
+- **Go to step i:** select that step's pose (resets the hold timer to the step's seconds and announces the pose — §10), then refresh the editor, Home card, progress bar and queue.
+- When a hold completes (the timer says "Well done. Release the pose."), wait **3 s**, then go to the next step. After the last step: say "Sequence complete. Great work.", mark inactive and finished, reset the hold timer, unlock editing, set the progress label to "Sequence complete" with every segment done, and show the **completion card** on the stage: a check-circle icon, "Practice complete", "N poses · {total} of holding" and a primary "Finish" button (returns Home). While it shows, the canvas shows only the video (no outline, skeleton or evaluation) and no voice prompts are spoken.
+- **Skip pose ⏭:** next step immediately (or finish on the last).
+- **End** (Session top bar) or **Finish**: stop the camera (which stops any sequence), clear the finished state, hide the completion card and return Home.
+- Choosing a single pose (Home tile) stops any sequence first. If the camera fails to start, the sequence is stopped (the Session screen stays, showing the error on the stage; End returns Home).
 
 ## 10. Voice coaching
 
-- **On by default.** The choice is saved in `localStorage` key `samajyoga.voice` ("on"/"off"; anything else = on). If the browser has no speech it is off. Button text "🔊 Voice on" (green) / "🔇 Voice off". Turning it on says "Voice coaching on. I'll guide your alignment."; turning it off cancels speech. No speech support → error "This browser doesn't support speech. Try the latest Chrome."
-- **Unlocking on phones:** clicking "▶ Start sequence", "▶ Start this sequence" or "📷 Start camera" immediately speaks a silent single-space utterance (volume 0) inside the click, so later speech is allowed.
+- **On by default.** The choice is saved in `localStorage` key `samajyoga.voice` ("on"/"off"; anything else = on). If the browser has no speech it is off. There is a round **voice button** in the top bar of both screens: a sage speaker-with-waves icon when on, a muted speaker-with-✕ when off; its `aria-label`/`title` is "Voice coaching on — tap to turn off" / "Voice coaching off — tap to turn on". Turning it on says "Voice coaching on. I'll guide your alignment."; turning it off cancels speech. No speech support → error "This browser doesn't support speech. Try the latest Chrome."
+- **Unlocking on phones/tablets:** tapping "Begin practice" (Home or drawer) or a pose tile immediately speaks a silent single-space utterance (volume 0) inside the tap, so later speech is allowed.
 - **Voice choice:** the first voice whose language matches en-US/GB/AU and whose name matches female|samantha|karen|serena|moira|tessa|google us english|zira; otherwise the first English voice; otherwise the first voice. Re-check when the voice list changes.
 - **Delivery:** rate **0.82**, pitch **0.78**, volume 1. Each new utterance cancels anything queued. All text is cleaned first: "°" → " degrees", "~" → "about ", brackets removed, whitespace collapsed.
 - **Pose announcement** (on every pose change, and when the camera starts): shows the facing card for **4 s** (§11a). If voice is on and the camera is running, say "{spoken name}. {Stand facing the camera. | Stand side-on to the camera.} {description} Step into the outline." While this plays, no corrections are spoken (it ends on the utterance's end/error event, or after 15 s at most); when it ends the "last spoke" time is set to now.
@@ -291,8 +314,8 @@ Total "6 poses · 1 min 50 s of holding".
 
 The canvas is redrawn on every new video frame once the model is loaded (and on every animation frame while the model is still loading, so the outline is visible straight away). Order: clear → **target outline** → (if a body is detected) skeleton, level guides, spine indicator, hold countdown. Line widths scale with the canvas width W (height H); landmark x, y are multiplied by W, H. Because the canvas is shown mirrored, a point at screen position X is drawn at canvas x = W − X.
 
-1. **Target outline** (§7.7 data, laid out as in §11a): the silhouette is painted on an off-screen canvas (every bone as a round-capped line of its thickness, head as a filled circle); a second off-screen copy is hollowed out by repainting the same silhouette with every width/radius reduced by an **edge** of max(3, W×0.007) on each side using `destination-out`, leaving only the outer outline. The fill is drawn at 28% opacity (34% when inside). The outline is drawn at full opacity twice: first with a dark shadow (`rgba(0,0,0,0.85)`, blur max(4, W×0.012)) so it stands out on light or busy backgrounds, then again without the shadow. Colour `#e3f4ff`, or green `#3fb950` when the user is **inside** (smoothed fit ≥ 0.8 with a body detected).
-2. **Skeleton:** base width = max(3, W×0.006), round caps. Each of the 12 lines in its colour (§8); checked lines 1.3× base width. Joints (the 13 landmarks of §5) are circles of radius max(4, W×0.008): red if any checked line through them is red, green if they touch only green checked lines, grey otherwise.
+1. **Target outline** (§7.7 data, laid out as in §11a): the silhouette is painted on an off-screen canvas (every bone as a round-capped line of its thickness, head as a filled circle); a second off-screen copy is hollowed out by repainting the same silhouette with every width/radius reduced by an **edge** of max(3, W×0.007) on each side using `destination-out`, leaving only the outer outline. The fill is drawn at 28% opacity (34% when inside). The outline is drawn at full opacity twice: first with a dark shadow (`rgba(0,0,0,0.85)`, blur max(4, W×0.012)) so it stands out on light or busy backgrounds, then again without the shadow. Colour white `#FFFFFF`, or green `#34C46A` when the user is **inside** (smoothed fit ≥ 0.8 with a body detected).
+2. **Skeleton:** base width = max(3, W×0.006), round caps. Each of the 12 lines in its colour (§8: aligned `#34C46A`, needs adjusting `#F0504F`, not checked white at 55%); checked lines 1.3× base width. Joints (the 13 landmarks of §5) are circles of radius max(4, W×0.008): red if any checked line through them is red, green if they touch only green checked lines, grey otherwise.
 3. **Level guides:** dashed [5, 6] horizontal lines at 60% opacity, width max(1.5, W×0.003), from 8% to 92% of the width, at the shoulder-midpoint and hip-midpoint heights, coloured like the shoulder line (11–12) and hip line (23–24) — grey when not checked. (The v1.5 centre guide line is removed; the outline replaces it.)
 4. **Spine indicator:** a dashed [4, 5] white line (40%) straight up from mid-hips to shoulder height; a solid line mid-hips → mid-shoulders, width max(4, W×0.008), coloured by the smoothed "spine" state if the pose checks the torso, otherwise green when torso tilt is under the pose's tolerance (Mountain 10, Tree 14, Warrior II 18, others 12); yellow `#ffd166` dots at both ends, radius max(6, W×0.012); a bold readout in the same colour at the line's midpoint shifted by W×0.06 (size max(14, W×0.022)): "N°" torso tilt; Fold "hip N°"; Warrior III "N° from level" (90 − tilt).
 5. (No canvas countdown — the hold countdown is shown on the current row of the pose queue, §4.)
@@ -315,34 +338,29 @@ All measurements here use canvas pixels (so they are true proportions). "Screen 
 
 **Facing check:** ratio = shoulder width ÷ torso length, smoothed `old × 0.85 + new × 0.15`. Wrong way round if the pose wants **side** and ratio > 0.50, or wants **front** and ratio < 0.32. It must stay wrong for **0.9 s** before "facing wrong" is set; it clears as soon as the ratio is fine, or when no body is detected. Reset on pose change.
 
-**On-stage overlays** (HTML, not mirrored; updated only when their content changes; hidden when the camera stops):
-- **Pose chip** (top-left, pill, 13px bold; 11.5px on phones): "{Pose name} · 👤 Face the camera" or "· ↔ Stand side-on".
-- **Facing card** (centred, dark 86% panel, 2px border, 16px radius): shown during the 4 s after a pose announcement (blue border) **or** while facing is wrong (orange border and orange text). It shows the pose's outline icon (76px, flipped like the outline), a 20px bold line — "Stand facing the camera" / "Stand side-on to the camera" for the announcement, "Turn to face the camera" / "Turn side-on to the camera" when wrong — and a muted sub-line: "{Pose name} — step into the outline." or "The outline shows the pose from this angle." The facing badge in the coaching panel turns orange at the same time.
-- **Placement hint** (bottom-centre pill; hidden while the facing card is up). First match wins:
-  - model not loaded: "Loading the pose tracker…"
-  - no body: "Step into view — your whole body should be visible" (blue border)
-  - r > 1.18: "Step back a little — you're bigger than the outline" (blue)
-  - r < 0.82: "Come a little closer — you're smaller than the outline" (blue)
-  - dx > 0.6: "◀ Move a little to your left" (blue); dx < −0.6: "Move a little to your right ▶" (blue)
-  - fit ≥ 0.8: "✓ You're inside the outline" (green border and text)
-  - otherwise: "Fit your body inside the outline"
+**On-stage overlays** (HTML, not mirrored; white backgrounds; updated only when their content changes; hidden when the camera stops):
+- **Facing chip** (top-left 14px; 32px high pill, 12.5px/700; max width = stage width − 160px, ellipsis): person icon + "Face the camera" or two-arrows icon + "Stand side-on"; when facing is wrong it turns amber and reads "Turn to face the camera" / "Turn side-on to the camera". Hidden while the completion card shows.
+- **Pose queue** (top-right 14px, width 124px, radius 18, padding 6): a **"Now"** row (sage-soft background, 26px outline icon, bold "Now", and the live hold countdown in Fraunces 22px sage) and, during a sequence, the following steps as rows labelled "Next" then "Then" with their seconds (20px icons, 12px/600 muted) — up to 3 after the current one (2 on ≤ 480px) — then "+K more" if there are more. Countdown: before the hold starts the target as "Ns" (13px muted sans); while active the remaining whole seconds; paused at 50% opacity; done = green "✓". On ≤ 480px the queue is 108px wide at 10px from the corner and the countdown is 19px.
+- **Facing card** (centred, white, 2px sage border, radius 22, soft shadow): shown for 4 s after each pose announcement, or while facing is wrong (amber border, amber icon and title). It shows the pose's outline icon (72px, flipped like the outline), a Fraunces 22px title ("Stand facing the camera" / "Stand side-on to the camera", or "Turn to face the camera" / "Turn side-on to the camera") and a 13.5px muted line ("{short name} — step into the outline." or "The outline shows the pose from this angle.").
+- **Completion card** (same style): see §9a.
+- **Placement hint** (bottom-centre 14px pill, 13px/700; hidden while the facing or completion card shows). First match wins: model not loaded "Loading the pose tracker…"; no body "Step into view — your whole body should be visible"; r > 1.18 "Step back a little — you're bigger than the outline"; r < 0.82 "Come a little closer — you're smaller than the outline"; dx > 0.6 "Move a little to your left"; dx < −0.6 "Move a little to your right"; fit ≥ 0.8 a check icon + "You're inside the outline" in `--good-text`; otherwise "Fit your body inside the outline".
 
 The outline and placement are guidance only: the score and hold timer still come from the cues (§8, §9).
 
 ## 12. Start-up, camera and errors
 
-- **On load:** build the sequence editor and strip, select Mountain (single-pose). If the page is opened as `file:`, show the error "⚠ This page is opened as a local file, and Chrome blocks the camera on file:// pages (that's why no permission prompt appears). Run it from a local server instead — see Help & tips in the ☰ menu." If `navigator.mediaDevices.getUserMedia` is missing, show "This browser doesn't expose camera access here. Use Chrome, and open the page via http://localhost (see Help & tips in the ☰ menu)."
-- **Start** (camera first, then the model):
-  1. Disable the camera button and show "Requesting camera…". Request `video: {width ideal 960, height ideal 720, facingMode "user"}`, with no audio. Play the video, hide the placeholder, set running, change the camera button to "■ Stop camera", size the stage to the camera's aspect ratio, begin the frame loop, and announce the current pose (§10).
-  2. Camera errors (re-enable the camera button; stop any sequence):
-     - NotAllowed/Permission on `file:` → the file:// message above in camera form ("Camera blocked because this page is opened as a local file…")
-     - NotAllowed/Permission otherwise → "Camera permission was denied and no prompt appeared. Two things to check: (1) click the camera icon in Chrome's address bar and set it to Allow; (2) on Mac, open System Settings ▸ Privacy & Security ▸ Camera and make sure Chrome is switched on. Then press Start again."
-     - NotFound → "No camera was found…"
-     - NotReadable → "The camera is busy — another app (Zoom, FaceTime, Photo Booth…) may be using it…"
+- **On load:** build the step editor, Home sequence card and pose tiles, select Mountain (single-pose), set the greeting, show the Home screen. If the page is opened as `file:`, show the error "⚠ This page is opened as a local file, and Chrome blocks the camera on file:// pages (that's why no permission prompt appears). Run it from a local server instead — see Help & tips in the menu." If `navigator.mediaDevices.getUserMedia` is missing, show "This browser doesn't expose camera access here. Use Chrome or Safari, and open the page via http(s) (see Help & tips in the menu)." Status messages appear on both screens' status lines, and on the stage placeholder while the camera is off.
+- **Start** (camera first, then the model; ignored if already running or starting):
+  1. Show the stage placeholder "Starting the camera…" and status "Requesting camera…". Request `video: {width ideal 960, height ideal 720, facingMode "user"}`, no audio. Play the video, hide the placeholder, set running, size the stage to the camera's aspect ratio, begin the frame loop, and announce the current pose (§10).
+  2. Camera errors (stop any sequence; the message shows on the stage in light orange):
+     - NotAllowed/Permission on `file:` → "Camera blocked because this page is opened as a local file. Chrome won't show a prompt on file:// pages. Open it via http://localhost instead — see Help & tips in the menu."
+     - NotAllowed/Permission otherwise → "Camera permission was denied and no prompt appeared. Two things to check: (1) click the camera icon in the browser's address bar and set it to Allow; (2) on Mac, open System Settings ▸ Privacy & Security ▸ Camera and make sure your browser is switched on. Then try again."
+     - NotFound → "No camera was found. Check that a webcam is connected and not in use by another app."
+     - NotReadable → "The camera is busy — another app (Zoom, FaceTime, Photo Booth…) may be using it. Close that app and try again."
      - anything else → "Couldn't open the camera: {message}"
-  3. If the model isn't loaded yet, show "Downloading pose model (first time only)…" and load it (§3). If offline → "You appear to be offline. The pose model has to download once from the internet — reconnect and press Start again. (Your camera is working.)" If a download fails → "Camera works, but the pose model couldn't download — a network or firewall is blocking it…". Any other failure → "Camera works, but the pose model failed to load: {message}". On success, briefly show "Model ready (GPU|CPU).", then "Tracking… step back so your whole body is in frame." The camera keeps running even if the model fails.
-- **Frame loop** (`requestAnimationFrame`): when the video has data, match the canvas size to the video (and re-size the stage). If the model is loaded: only when `video.currentTime` has changed, run `detectForVideo(video, performance.now())`; with a body, update flip, facing, placement and floor (§11a), the fit, then evaluate (§8); then draw (§11) and update the overlays. If no body: status "No body detected — make sure you're fully in frame." (set once; when a body returns, "Tracking…"). If the model isn't loaded yet: draw the outline every frame.
-- **Stop:** stop any running sequence, cancel speech, stop the camera tracks, show the placeholder, set the camera button back to "📷 Start camera", clear the canvas, line smoothing and outline floor, hide the stage overlays, reset the hold timer, show "Stopped.", and reset the ring to "—" and "Waiting…".
+  3. If the model isn't loaded yet, show "Downloading pose model (first time only)…" and load it (§3). If offline → "You appear to be offline. The pose model has to download once from the internet — reconnect and try again. (Your camera is working.)" If a download fails → "Camera works, but the pose model couldn't download — a network or firewall is blocking it. Try a different network, or see Help & tips in the menu about running a tiny local server." Any other failure → "Camera works, but the pose model failed to load: {message}". On success the status is cleared. The camera keeps running even if the model fails.
+- **Frame loop** (`requestAnimationFrame`): when the video has data, match the canvas size to the video (and re-size the stage). If the model is loaded: only when `video.currentTime` has changed, run `detectForVideo(video, performance.now())`; with a body, update flip, facing, placement and floor (§11a), the fit, then evaluate (§8); then draw (§11) and update the overlays and coach card. If no body: status "No body detected — make sure you're fully in frame." (set once; cleared when a body returns) and the checks return to idle. If the model isn't loaded yet: draw the outline every frame. While the completion card shows, only clear the canvas.
+- **Stop** (End / Finish): stop any running sequence, cancel speech, stop the camera tracks, show the placeholder "Camera off.", clear the canvas, line smoothing and outline floor, hide the stage overlays, reset the hold timer and the checks/score, and clear the status.
 
 ## 13. Acceptance checks (to confirm a rebuild matches)
 
@@ -354,16 +372,17 @@ The outline and placement are guidance only: the score and hold timer still come
 6. Stepping out of a pose for about 2 s mid-hold → the timer shows "Paused…", then resumes from where it was. A 0.3 s tracking blip doesn't pause it.
 7. Changing a pose's timer to 20 s, reloading the page → it's still 20 s for that pose and 10 s for the others.
 8. With voice on, at full alignment → praise plus "Hold for N seconds", "Five more seconds", then "Well done. Release the pose."
-9. First visit: the main screen shows the default sequence (Mountain 15 s → Tree 20 s → Warrior II 20 s → Warrior I 20 s → Warrior III 15 s → Half Forward Fold 20 s, "6 poses · 1 min 50 s of holding") and no editing controls. ☰ (or ✎ Edit) opens the side menu; edit the sequence there (seconds, reorder, delete, add), reload → the edits are still there and the main-screen strip matches.
+9. First visit: the Home screen shows "Your practice" and the default sequence (Mountain 15 s, Tree 20 s, Warrior II 20 s, a "Then turn side-on" divider, Warrior I 20 s, Warrior III 15 s, Half Forward Fold 20 s; "6 poses · 1 min 50 s of holding · one turn"). The menu button or "Edit" opens the side menu; edit the sequence there (seconds, reorder, delete, add), reload → the edits are still there and the Home card matches.
 10. Typing 999 seconds → it becomes 300; typing 2 → it becomes 5.
-11. Start sequence → the run panel shows "Step 1 of N…", editing and the panel's −/+ are locked, and the timer uses that step's seconds. When the hold completes → 3 s later the app moves to step 2. Skip works. After the last step → "Sequence complete ✓" and editing unlocks.
-12. Clicking a single-pose button during a sequence → the sequence stops and that pose uses its normal per-pose time.
+11. "Begin practice" → the Session screen opens with "Pose 1 of N" and segments, editing is locked, the − / + control is hidden and the timer uses that step's seconds. When the hold completes → 3 s later the app moves to step 2. "Skip pose" works. After the last step → the "Practice complete" card; "Finish" returns Home and editing unlocks.
+12. Tapping a pose tile on Home → Session screen with "Practising one pose", the − / + control visible and the pose's own hold time; "End" returns Home.
 13. Starting any pose → the outline of that pose appears on the video (before the model has even loaded), the facing card shows "Stand facing the camera" or "Stand side-on to the camera" for 4 s, and (voice on) the app says the pose name, which way to face, the description and "Step into the outline."
 14. Standing too close → "Step back a little — you're bigger than the outline"; too far → "Come a little closer…"; off to one side → "Move a little to your left/right". Once inside, the outline turns green and the hint reads "✓ You're inside the outline".
 15. In Warrior I/III or the Fold while facing the camera → after about 1 s an orange "Turn side-on to the camera" card appears and the voice says it; turning side-on clears it. In Mountain/Tree/Warrior II while side-on → "Turn to face the camera".
 16. Doing Warrior I (or III, or the Fold) facing screen-left → within about half a second the outline flips to face left. Tree with the other leg lifted / Warrior II with the other knee bent → the outline flips too.
-17. On a phone, the coaching panel sits directly under the camera, above the pose list.
-18. During a sequence the queue in the top-right of the camera view highlights the current pose with its countdown (target "20s" → counting down → "✓"), shows the next poses with their times, and greys finished ones with ✓. Outside a sequence it shows the pose being practised and "▶ Sequence (6)".
+17. Layouts: phone = one column (camera, then coaching); iPad portrait = camera on top, coaching in two columns below; iPad landscape and laptop = camera left, coaching right. Home is one column on phones and two on iPad/laptop. No horizontal scrolling at 390px wide.
+18. During a sequence the queue in the top-right of the camera view shows "Now" with the countdown (target "20s" → counting down → "✓") and the next poses ("Next", "Then") with their times. In single-pose practice it shows only "Now".
+20. The coach card always shows one thing to do: "Step into view", the facing prompt, the first failing cue's message, or "Lovely — hold it there" when everything is green.
 19. The outline is clearly visible on both dark and bright backgrounds (thick light edge with a dark shadow).
 
 ## 14. Known limitations
@@ -372,6 +391,7 @@ The outline and placement are guidance only: the score and hold timer still come
 - The app is 2D only: poses judged side-on can't check things that are only visible from the front (e.g. hips square in Warrior I).
 - Single person only; the first detected body is used.
 - One sequence per device; sequences aren't synced between devices (e.g. phone and laptop).
+- The design's fonts load from Google Fonts; offline, the app falls back to Georgia and the system sans font.
 - The outline uses fixed average body proportions; people with different proportions may not fit it exactly — it's a guide, while the score and timer come from the angle checks.
 - The facing check (shoulder width vs torso length) can be fooled by loose clothing or partial views; thresholds need real-camera tuning.
 
@@ -387,3 +407,4 @@ The outline and placement are guidance only: the score and hold timer still come
 | 1.5 | 2026-09-28 | My routine: saved, editable list of poses + hold times (default: every pose at 10 s), guided run with auto-advance, skip and stop; help text points to `index.html` |
 | 1.6 | 2026-10-05 | Simpler main screen: sequence editor and help moved to a ☰ side menu, read-only sequence strip + "Start sequence" on the main screen, coaching panel under the camera on phones; new default sequence (front poses then side-on, 15–20 s holds, new storage key); see-through target-pose outline on the video that the user steps into (scaled per sequence, stands on the user's floor, flips to match facing, turns green when inside) with step back/closer/left/right hints; facing-the-camera vs side-on prompts (card + voice + wrong-way detection); voice on by default and saved; pose icons; stage matches camera aspect; countdown moved to top-right; centre guide removed |
 | 1.7 | 2026-10-05 | Bolder outline (thicker edge, stronger fill, dark shadow, brighter colour); pose queue moved into the top-right corner of the camera view with the live hold countdown on the current pose (replaces the main-screen strip and the canvas countdown); compact queue on phones |
+| 1.8 | 2026-10-05 | "Studio Calm" redesign (chosen from three mock-ups): light stone/white/sage look with Fraunces + Manrope; separate Home screen (greeting, sequence card with turn divider, Begin practice, pose tiles, tips) and Session screen (End, progress segments, camera card, coach card with the one thing to do now, hold bar, checks); layouts for phone, iPad portrait, iPad landscape and laptop; white on-video overlays; completion card; icon voice button; updated skeleton colours |
