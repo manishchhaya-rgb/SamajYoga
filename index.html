@@ -174,6 +174,44 @@
   .place-hint.good { border-color: var(--good); color: var(--good); }
   .place-hint.adjust { border-color: var(--accent); }
 
+  /* Pose queue in the top-right corner of the camera view */
+  .queue {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    background: rgba(14,17,22,.84); border: 1px solid var(--line); border-radius: 12px;
+    padding: 6px; display: flex; flex-direction: column; gap: 3px;
+    max-width: 46%; min-width: 120px; font-size: 12.5px;
+    -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  }
+  .queue .qhead { display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    color: var(--muted); font-size: 11.5px; font-weight: 650; padding: 1px 2px 3px; }
+  .queue .qhead button { padding: 2px 7px; font-size: 11.5px; border-radius: 7px; }
+  .queue .q { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 8px; min-width: 0; }
+  .queue .q svg { width: 22px; height: 22px; color: var(--ghost); flex: none; }
+  .queue .qn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .queue .qs { color: var(--muted); margin-left: auto; padding-left: 4px; font-variant-numeric: tabular-nums; }
+  .queue .q.done { opacity: .45; }
+  .queue .q.done .qs { color: var(--good); }
+  .queue .q.current { background: #14263f; border: 1px solid var(--accent); padding: 6px 8px; }
+  .queue .q.current svg { width: 34px; height: 34px; }
+  .queue .q.current .qn { font-weight: 650; font-size: 13.5px; }
+  .queue .qt { margin-left: auto; padding-left: 6px; font-size: 26px; font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums; }
+  .queue .qt.idle { color: var(--muted); font-size: 16px; font-weight: 650; }
+  .queue .qt.paused { opacity: .5; }
+  .queue .qt.done { color: var(--good); }
+  .queue .qmore { color: var(--muted); font-size: 11.5px; padding: 0 6px; }
+  .queue .qstart { margin-top: 3px; padding: 5px 8px; font-size: 12px; }
+  .stage-chip { max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 600px) {
+    .queue { top: 8px; right: 8px; padding: 5px; min-width: 0; }
+    .queue .q:not(.current) .qn { display: none; }
+    .queue .q { padding: 2px 5px; }
+    .queue .q svg { width: 18px; height: 18px; }
+    .queue .qhead { font-size: 10.5px; }
+    .queue .q.current svg { width: 26px; height: 26px; }
+    .queue .qt { font-size: 22px; }
+  }
+
   .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); justify-content: center; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
@@ -336,6 +374,7 @@
         <div class="orient-sub" id="orientSub"></div>
       </div>
       <div class="place-hint" id="placeHint" hidden></div>
+      <div class="queue" id="queue" aria-live="polite"></div>
     </div>
 
     <div class="legend">
@@ -354,18 +393,10 @@
 
   <div class="main-bottom">
     <div class="block">
-      <div class="block-head">
-        <strong>Your sequence</strong>
-        <span><span class="muted" id="stripTotal"></span> <button class="link" id="editSeq">✎ Edit</button></span>
-      </div>
-      <div class="strip" id="strip"></div>
-    </div>
-
-    <div class="block">
       <div class="block-head"><strong>Or practise a single pose</strong></div>
       <div class="pose-picker" id="posePicker"></div>
     </div>
-    <div class="hint-line">☰ Menu: edit your sequence, help &amp; tips.</div>
+    <div class="hint-line">Your sequence is shown in the top-right corner of the camera view. ☰ Menu: edit your sequence, help &amp; tips.</div>
   </div>
 
   <div class="right">
@@ -957,6 +988,7 @@ function selectPose(key, fromRoutine = false) {
   renderCues(null);
   resetHold();
   resetCoach();
+  if (typeof renderQueue === "function" && queueEl) renderQueue();
   announcePose();
 }
 
@@ -1193,8 +1225,8 @@ function paintSilhouette(c, T, shrink, color) {
 function drawTemplate(T, inside) {
   const W = canvas.width, H = canvas.height;
   for (const cv of [tplFillCv, tplRingCv]) if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const color = inside ? SEG_COLORS.good : "#bfe3ff";
-  const edge = Math.max(2, W * 0.004);
+  const color = inside ? SEG_COLORS.good : "#e3f4ff";
+  const edge = Math.max(3, W * 0.007);
   const f = tplFillCv.getContext("2d");
   f.clearRect(0, 0, W, H);
   paintSilhouette(f, T, 0, color);
@@ -1205,9 +1237,14 @@ function drawTemplate(T, inside) {
   paintSilhouette(r, T, edge, "#000");
   r.globalCompositeOperation = "source-over";
   ctx.save();
-  ctx.globalAlpha = inside ? 0.24 : 0.17;
+  ctx.globalAlpha = inside ? 0.34 : 0.28;
   ctx.drawImage(tplFillCv, 0, 0);
-  ctx.globalAlpha = 0.9;
+  // Dark shadow behind the edge so the outline stands out on light or busy backgrounds
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = Math.max(4, W * 0.012);
+  ctx.drawImage(tplRingCv, 0, 0);
+  ctx.shadowColor = "transparent";
   ctx.drawImage(tplRingCv, 0, 0);
   ctx.restore();
 }
@@ -1464,13 +1501,6 @@ function drawSkeleton(lm, segState) {
   drawMirroredText(readout, (hipPx.x + shoulderPx.x) / 2 - W * 0.06, (hipPx.y + shoulderPx.y) / 2,
     spineColor, Math.max(14, Math.round(W * 0.022)));
 
-  // 4) Hold countdown, big, in the top-right corner of the screen (canvas x is mirrored)
-  if (holdStarted) {
-    const left = Math.max(0, Math.ceil(holdTarget() - holdElapsed));
-    drawMirroredText(holdDone ? "✓" : String(left), W * 0.1, H * 0.1,
-      holdDone ? SEG_COLORS.good : (holdActive ? "#ffffff" : "rgba(255,255,255,0.45)"),
-      Math.max(36, Math.round(W * 0.08)));
-  }
 }
 
 // ---------- Voice coaching (Web Speech API — built in, offline) ----------
@@ -1625,6 +1655,7 @@ function setHoldTarget(sec) {
   holdTargets[currentPose] = Math.min(HOLD_MAX, Math.max(HOLD_MIN, sec));
   try { localStorage.setItem("samajyoga.holdTargets", JSON.stringify(holdTargets)); } catch (e) {}
   resetHold();
+  renderQueue();
 }
 function resetHold() {
   holdElapsed = 0; holdStarted = false; holdDone = false; holdActive = false;
@@ -1644,6 +1675,7 @@ function renderHold() {
     "Paused — realign to continue (" + left + "s left)";
   holdMinusBtn.disabled = holdPlusBtn.disabled = routineActive;
   renderRoutineRun();
+  renderQueueTimer();
 }
 function updateHold(allOk) {
   const now = performance.now();
@@ -1745,8 +1777,8 @@ const DEFAULT_SEQUENCE = [
 ];
 const STEP_MIN = 5, STEP_MAX = 300, STEP_DEFAULT = 10, STEP_INC = 5, NEXT_DELAY_MS = 3000;
 const stepsEl = document.getElementById("steps");
-const stripEl = document.getElementById("strip");
-const stripTotalEl = document.getElementById("stripTotal");
+const queueEl = document.getElementById("queue");
+let queueTimerEl = null;
 const routineRunEl = document.getElementById("routineRun");
 const routineNowEl = document.getElementById("routineNow");
 const routineNextEl = document.getElementById("routineNext");
@@ -1853,34 +1885,88 @@ function renderSteps() {
     ? `${routine.length} pose${routine.length === 1 ? "" : "s"} · ${fmtDuration(total)} of holding`
     : "";
   routineTotalEl.textContent = totalText;
-  stripTotalEl.textContent = totalText;
   addStepBtn.disabled = resetRoutineBtn.disabled = routineActive;
   drawerStartBtn.disabled = routineActive || !routine.length;
   renderSeqButton();
-  renderStrip();
+  renderQueue();
 }
 
-// Read-only summary of the sequence on the main screen.
-function renderStrip() {
-  stripEl.innerHTML = "";
-  if (!routine.length) {
-    stripEl.innerHTML = '<span class="muted" style="color:var(--muted);font-size:13px">Empty — tap ✎ Edit to add poses.</span>';
-    return;
-  }
-  routine.forEach((st, i) => {
-    if (i) {
-      const a = document.createElement("span");
-      a.className = "arrow"; a.textContent = "→";
-      stripEl.appendChild(a);
+// Pose queue in the top-right corner of the camera view.
+// Running a sequence: the steps (current one highlighted with the live hold countdown).
+// Otherwise: the pose being practised, plus a button to start the sequence.
+// Wide screens: 1 finished step + current + 4 upcoming. Phones (≤ 600px): current + 2 upcoming.
+const narrowMQ = window.matchMedia("(max-width: 600px)");
+narrowMQ.addEventListener?.("change", () => renderQueue());
+function queueRow(pose, secs, cls) {
+  const r = document.createElement("div");
+  r.className = "q" + (cls ? " " + cls : "");
+  r.title = POSES[pose].name + " — " + (POSES[pose].facing === "side" ? "side-on" : "facing the camera") + " · " + secs + "s";
+  r.innerHTML = poseIconSVG(pose) + '<span class="qn">' + POSES[pose].name + "</span>";
+  return r;
+}
+function renderQueue() {
+  queueEl.innerHTML = "";
+  queueTimerEl = null;
+  const head = document.createElement("div");
+  head.className = "qhead";
+  const edit = document.createElement("button");
+  edit.textContent = "✎ Edit"; edit.title = "Edit your sequence";
+  edit.addEventListener("click", openDrawer);
+
+  if (routineActive) {
+    head.innerHTML = "<span>Step " + (routineIndex + 1) + " / " + routine.length + "</span>";
+    head.appendChild(edit);
+    queueEl.appendChild(head);
+    const before = narrowMQ.matches ? 0 : 1, after = narrowMQ.matches ? 2 : 4;
+    const from = Math.max(0, routineIndex - before);
+    const to = Math.min(routine.length - 1, routineIndex + after);
+    if (from > 0) {
+      const m = document.createElement("div"); m.className = "qmore"; m.textContent = "✓ " + from + " done";
+      queueEl.appendChild(m);
     }
-    const c = document.createElement("span");
-    c.className = "chip";
-    if (routineActive && i === routineIndex) c.classList.add("current");
-    if (routineActive && i < routineIndex) c.classList.add("done");
-    c.innerHTML = poseIconSVG(st.pose) + "<span>" + POSES[st.pose].name + "</span><small>" + st.secs + "s</small>";
-    c.title = POSES[st.pose].name + " — " + (POSES[st.pose].facing === "side" ? "side-on" : "facing the camera");
-    stripEl.appendChild(c);
-  });
+    for (let i = from; i <= to; i++) {
+      const st = routine[i];
+      const cls = i < routineIndex ? "done" : i === routineIndex ? "current" : "";
+      const row = queueRow(st.pose, st.secs, cls);
+      if (i === routineIndex) {
+        queueTimerEl = document.createElement("span");
+        queueTimerEl.className = "qt";
+        row.appendChild(queueTimerEl);
+      } else {
+        const sec = document.createElement("span");
+        sec.className = "qs"; sec.textContent = i < routineIndex ? "✓" : st.secs + "s";
+        row.appendChild(sec);
+      }
+      queueEl.appendChild(row);
+    }
+    if (to < routine.length - 1) {
+      const m = document.createElement("div"); m.className = "qmore"; m.textContent = "+" + (routine.length - 1 - to) + " more";
+      queueEl.appendChild(m);
+    }
+  } else {
+    head.innerHTML = "<span>Practising</span>";
+    head.appendChild(edit);
+    queueEl.appendChild(head);
+    const row = queueRow(currentPose, holdTarget(), "current");
+    queueTimerEl = document.createElement("span");
+    queueTimerEl.className = "qt";
+    row.appendChild(queueTimerEl);
+    queueEl.appendChild(row);
+    const b = document.createElement("button");
+    b.className = "qstart";
+    b.textContent = routine.length ? "▶ Sequence (" + routine.length + ")" : "✎ Build a sequence";
+    b.addEventListener("click", () => routine.length ? startRoutine() : openDrawer());
+    queueEl.appendChild(b);
+  }
+  renderQueueTimer();
+}
+// Live hold countdown on the current queue item.
+function renderQueueTimer() {
+  if (!queueTimerEl) return;
+  const t = holdTarget();
+  const left = Math.max(0, Math.ceil(t - holdElapsed));
+  queueTimerEl.textContent = holdDone ? "✓" : holdStarted ? String(left) : t + "s";
+  queueTimerEl.className = "qt" + (holdDone ? " done" : !holdStarted ? " idle" : holdActive ? "" : " paused");
 }
 
 function renderSeqButton() {
@@ -1978,7 +2064,6 @@ function closeDrawer() {
   drawer.setAttribute("aria-hidden", "true"); menuBtn.setAttribute("aria-expanded", "false");
 }
 menuBtn.addEventListener("click", openDrawer);
-document.getElementById("editSeq").addEventListener("click", openDrawer);
 document.getElementById("drawerClose").addEventListener("click", closeDrawer);
 backdrop.addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
