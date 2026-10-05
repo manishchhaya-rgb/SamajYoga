@@ -22,6 +22,7 @@
     --accent: #58a6ff;
     --line: #2b3440;
     --seg-bad: #f85149;
+    --ghost: #bfe3ff;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -31,28 +32,107 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   header {
-    padding: 16px 20px;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
     border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 12px;
   }
-  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; white-space: nowrap; }
   header .tag { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  @media (max-width: 600px) { header .tag { display: none; } }
+
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 14px; font-size: 14px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #06101f; border-color: var(--accent); font-weight: 650; }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.link { background: none; border: none; color: var(--accent); padding: 4px 6px; }
+  .icon-btn { font-size: 20px; line-height: 1; padding: 8px 12px; }
+  #voiceBtn.voice-on { border-color: var(--good); color: var(--good); }
+
+  /* ---------- Side drawer (sequence editor + help) ---------- */
+  .drawer {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: min(390px, 92vw);
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    transform: translateX(-102%);
+    transition: transform .25s ease;
+    z-index: 40; overflow-y: auto;
+    padding: 16px; padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .drawer.open { transform: none; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 39; }
+  .backdrop.show { opacity: 1; pointer-events: auto; }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .drawer-head h2 { margin: 0; font-size: 17px; }
+  .drawer .sub { color: var(--muted); font-size: 13px; margin: 6px 0 14px; line-height: 1.45; }
+  .drawer .wide { width: 100%; margin-top: 12px; }
+  details.help { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.help summary { cursor: pointer; font-weight: 650; font-size: 14px; }
+  details.help .hint { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+
+  ol.steps { list-style: none; margin: 0 0 12px; padding: 0; }
+  ol.steps li {
+    display: grid;
+    grid-template-columns: 20px 34px minmax(0, 1fr);
+    grid-template-areas: "num icon sel" ". . ctl";
+    gap: 6px 8px; align-items: center;
+    padding: 8px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; background: var(--panel-2);
+  }
+  ol.steps li.current { border-color: var(--accent); background: #14263f; }
+  ol.steps li.done { opacity: .55; }
+  ol.steps .num { grid-area: num; color: var(--muted); font-size: 13px; text-align: center; }
+  ol.steps .ico { grid-area: icon; color: var(--ghost); display: flex; }
+  ol.steps .ico svg { width: 32px; height: 32px; }
+  ol.steps select { grid-area: sel; }
+  ol.steps .ctl { grid-area: ctl; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  ol.steps select, ol.steps input { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 8px; font-size: 14px; min-width: 0; width: 100%; font-family: inherit; }
+  ol.steps input { width: 56px; text-align: center; }
+  ol.steps .secs { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+  ol.steps .move { display: flex; gap: 4px; }
+  ol.steps button { padding: 5px 9px; font-size: 13px; line-height: 1; }
+  .routine-empty { color: var(--muted); font-size: 13px; padding: 8px 0 12px; }
+  .routine-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .routine-total { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+
+  /* ---------- Main layout ---------- */
   .wrap {
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
-    gap: 18px;
-    padding: 18px 20px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.85fr);
+    grid-template-areas: "top side" "bottom side";
+    grid-template-rows: auto 1fr;
+    gap: 0 18px;
+    padding: 16px 18px;
     align-items: start;
   }
-  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+  .main-top { grid-area: top; min-width: 0; }
+  .main-bottom { grid-area: bottom; min-width: 0; }
+  .right { grid-area: side; }
+  /* Phones: camera, then coaching, then the sequence and pose list */
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; grid-template-areas: "top" "side" "bottom"; grid-template-rows: auto; gap: 14px; padding: 12px; }
+    .stage-chip { font-size: 11.5px; padding: 4px 9px; top: 8px; left: 8px; }
+    .place-hint { font-size: 12.5px; }
+  }
 
   .stage {
     position: relative;
-    width: 100%;
+    aspect-ratio: var(--ar, 4 / 3);
+    width: min(100%, calc(70vh * var(--arn, 1.3333)));
+    margin: 0 auto;
     background: #000;
     border-radius: 14px;
     overflow: hidden;
-    aspect-ratio: 4 / 3;
     border: 1px solid var(--line);
   }
   #video, #overlay {
@@ -60,7 +140,7 @@
     width: 100%; height: 100%;
     transform: scaleX(-1); /* mirror like a real mirror */
   }
-  #video { object-fit: cover; }
+  #video { object-fit: contain; }
   .stage .placeholder {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -68,33 +148,86 @@
     color: var(--muted);
   }
   .stage .placeholder.hidden { display: none; }
+  .stage-chip {
+    position: absolute; top: 10px; left: 10px; z-index: 2;
+    background: rgba(14,17,22,.78); border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 11px; font-size: 13px; font-weight: 600;
+  }
+  .orient-card {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3;
+    background: rgba(14,17,22,.86); border: 2px solid var(--accent); border-radius: 16px;
+    padding: 16px 22px; text-align: center; width: max-content; max-width: 82%;
+  }
+  .orient-card[hidden] { display: none; }
+  .orient-card.warn { border-color: var(--bad); }
+  .orient-icon { color: var(--ghost); display: flex; justify-content: center; }
+  .orient-icon svg { width: 76px; height: 76px; }
+  .orient-text { font-size: 20px; font-weight: 700; margin-top: 8px; }
+  .orient-card.warn .orient-text { color: var(--bad); }
+  .orient-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .place-hint {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 2;
+    background: rgba(14,17,22,.82); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 13px; font-size: 13.5px; font-weight: 600; text-align: center; max-width: 92%;
+  }
+  .place-hint[hidden] { display: none; }
+  .place-hint.good { border-color: var(--good); color: var(--good); }
+  .place-hint.adjust { border-color: var(--accent); }
 
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); justify-content: center; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+  .legend i.ghost { height: 10px; border: 2px solid var(--ghost); background: rgba(191,227,255,.18); }
 
-  .controls { display: gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  button {
-    background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 10px;
-    padding: 10px 14px; font-size: 14px; cursor: pointer;
-    transition: border-color .15s, background .15s;
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .controls .primary { font-size: 15px; padding: 11px 18px; }
+
+  .block { margin-top: 16px; }
+  .block-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .block-head strong { font-size: 14px; }
+  .block-head .muted { color: var(--muted); font-size: 12.5px; }
+  .strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .strip .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 4px 9px 4px 5px; font-size: 13px;
   }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #06101f; border-color: var(--accent); font-weight: 600; }
-  button:disabled { opacity: .5; cursor: default; }
+  .strip .chip svg { width: 26px; height: 26px; color: var(--ghost); }
+  .strip .chip small { color: var(--muted); }
+  .strip .chip.current { border-color: var(--accent); background: #14263f; }
+  .strip .chip.done { opacity: .5; }
+  .strip .arrow { color: var(--muted); font-size: 12px; }
   .pose-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pose-picker button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 6px; }
+  .pose-picker button svg { width: 28px; height: 28px; color: var(--ghost); }
   .pose-picker button.active { border-color: var(--accent); background: #14263f; }
-  #voiceBtn.voice-on { border-color: var(--good); background: rgba(63,185,80,.16); color: var(--good); }
 
+  .status { font-size: 13px; color: var(--muted); margin-top: 12px; min-height: 18px; }
+  .status.err { color: var(--bad); }
+  .hint-line { font-size: 12.5px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+  .right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  @media (min-width: 861px) { .right { position: sticky; top: 12px; } }
   .panel {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 14px;
     padding: 16px 16px 18px;
   }
-  .panel h2 { margin: 0 0 4px; font-size: 15px; }
-  .panel .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .panel h2 { margin: 0 0 6px; font-size: 16px; }
+  .panel .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; line-height: 1.45; }
+  .facing-badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; margin-bottom: 8px;
+  }
+  .facing-badge.warn { border-color: var(--bad); color: var(--bad); }
+
+  .run { background: #14263f; border-color: var(--accent); }
+  .run[hidden] { display: none; }
+  .routine-now { font-size: 14px; font-weight: 650; }
+  .routine-next { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .routine-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .routine-btns button { padding: 6px 11px; font-size: 13px; }
 
   .score-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
   .score-ring {
@@ -121,28 +254,7 @@
   .hold-status { font-size: 13px; color: var(--muted); }
   .hold.done .hold-status { color: var(--good); font-weight: 600; }
   .hold-foot button { padding: 5px 10px; font-size: 12.5px; }
-  .right { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-  .routine-run { background: #14263f; border: 1px solid var(--accent); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-  .routine-run[hidden] { display: none; }
-  .routine-now { font-size: 14px; font-weight: 650; }
-  .routine-next { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
-  .routine-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  .routine-btns button { padding: 6px 11px; font-size: 13px; }
-  ol.steps { list-style: none; margin: 0 0 12px; padding: 0; }
-  ol.steps li { display: grid; grid-template-columns: 22px minmax(0,1fr) auto auto; gap: 6px 8px; align-items: center;
-    padding: 8px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; background: var(--panel-2); }
-  ol.steps li.current { border-color: var(--accent); background: #14263f; }
-  ol.steps li.done { opacity: .55; }
-  ol.steps .num { color: var(--muted); font-size: 13px; text-align: center; }
-  ol.steps select, ol.steps input { background: var(--bg); color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 6px 8px; font-size: 14px; min-width: 0; width: 100%; }
-  ol.steps input { width: 56px; text-align: center; }
-  ol.steps .secs { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
-  ol.steps .move { display: flex; gap: 4px; }
-  ol.steps button { padding: 5px 9px; font-size: 13px; line-height: 1; }
-  .routine-empty { color: var(--muted); font-size: 13px; padding: 8px 0 12px; }
-  .routine-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .routine-total { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+
   ul.cues { list-style: none; margin: 0; padding: 0; }
   ul.cues li {
     display: flex; gap: 10px; align-items: flex-start;
@@ -155,116 +267,148 @@
   .dot.bad  { background: rgba(240,136,62,.16); color: var(--bad); }
   .dot.idle { background: rgba(154,167,180,.14); color: var(--muted); }
   .cue-text .msg { color: var(--muted); font-size: 12.5px; display: block; margin-top: 1px; }
-
-  .status { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 18px; }
-  .status.err { color: var(--bad); }
   a { color: var(--accent); }
-  .hint { font-size: 12.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
 </style>
 </head>
 <body>
 <header>
+  <button id="menuBtn" class="icon-btn" aria-label="Open menu: edit sequence and help" aria-controls="drawer" aria-expanded="false">☰</button>
   <h1>🧘 Yoga Teacher</h1>
-  <span class="tag">Live posture coaching from your webcam — everything runs locally in your browser.</span>
+  <span class="tag">Live posture coaching — everything runs on your device.</span>
+  <span class="spacer"></span>
+  <button id="voiceBtn" title="Speak prompts and corrections out loud">🔊 Voice on</button>
 </header>
 
+<!-- Side drawer: sequence editor + help -->
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Sequence and help">
+  <div class="drawer-head">
+    <h2>📋 My sequence</h2>
+    <button id="drawerClose" aria-label="Close menu">✕</button>
+  </div>
+  <div class="sub">The poses you'll be coached through, in order, and how long to hold each. Saved on this device — change it any time.</div>
+  <ol class="steps" id="steps"></ol>
+  <div class="routine-actions">
+    <button id="addStep">+ Add pose</button>
+    <button id="resetRoutine">Reset to default</button>
+  </div>
+  <div class="routine-total" id="routineTotal"></div>
+  <button id="drawerStart" class="primary wide">▶ Start this sequence</button>
+
+  <details class="help">
+    <summary>❓ Help &amp; tips</summary>
+    <div class="hint">
+      <strong>Set up:</strong> place your device so the camera sees you head-to-toe. Good, even lighting and a plain background help the tracker.
+      Nothing is uploaded — the video and pose detection stay on your device.
+      <br><br><strong>The outline:</strong> each pose is drawn on screen as a see-through outline. Stand where your body fits inside it —
+      the app tells you to step back, come closer, or move left/right. The outline turns <span style="color:var(--good)">green</span>
+      when you're inside it, and it flips to match the side you're facing.
+      <br><br><strong>Facing the camera or side-on:</strong> each pose tells you (on screen and out loud) whether to face the camera or stand side-on.
+      If you're turned the wrong way, an orange prompt appears until you turn.
+      <br><br><strong>Skeleton colours:</strong> every body line a pose checks starts <span style="color:var(--seg-bad)">red</span> and turns
+      <span style="color:var(--good)">green</span> when that part is aligned. When every checked line is green you're at 100%.
+      <br><br><strong>Hold timer:</strong> once every checked line is green the timer counts down. If you slip out of alignment it pauses and
+      carries on when you're back in position. In single-pose practice change the time with − / +.
+      <br><br><strong>My sequence:</strong> press <em>Start sequence</em> and the app coaches each pose in turn, moving on 3 seconds after each hold.
+      The default sequence does the facing-the-camera poses first, then the side-on ones, so you only turn once.
+      <br><br><strong>Voice:</strong> on by default — it announces each pose and how to stand, then speaks the most important fix,
+      waiting a few seconds between cues. Turn it off with the button at the top.
+      <br><br><strong>If you see a "model couldn't download" message:</strong> the app needs to fetch the pose model from the internet once.
+      Some networks/firewalls block this. Run a tiny local server instead: open a terminal in the folder with this file, run
+      <code>python3 -m http.server 8000</code>, then visit <code>http://localhost:8000/index.html</code> in Chrome.
+    </div>
+  </details>
+</aside>
+
 <div class="wrap">
-  <div>
-    <div class="stage">
+  <div class="main-top">
+    <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
       <div class="placeholder" id="placeholder">
         <div style="font-size:40px">📷</div>
-        <div>Click <strong>Start camera</strong> and allow camera access.<br>Stand back far enough that your whole body is visible.</div>
+        <div>Press <strong>▶ Start sequence</strong> (or pick a single pose) and allow camera access.<br>Stand back far enough that your whole body is visible.</div>
       </div>
+      <div class="stage-chip" id="stageChip" hidden></div>
+      <div class="orient-card" id="orientCard" hidden>
+        <div class="orient-icon" id="orientIcon"></div>
+        <div class="orient-text" id="orientText"></div>
+        <div class="orient-sub" id="orientSub"></div>
+      </div>
+      <div class="place-hint" id="placeHint" hidden></div>
     </div>
 
     <div class="legend">
+      <span><i class="ghost"></i>Target pose — fit inside it</span>
       <span><i style="background:var(--seg-bad)"></i>Needs adjusting</span>
       <span><i style="background:var(--good)"></i>Aligned</span>
-      <span><i style="background:rgba(154,167,180,.55)"></i>Not checked in this pose</span>
+      <span><i style="background:rgba(154,167,180,.55)"></i>Not checked</span>
     </div>
 
     <div class="controls">
-      <button id="startBtn" class="primary">Start camera</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <button id="voiceBtn" title="Speak corrections out loud">🔊 Voice coaching: off</button>
+      <button id="seqBtn" class="primary">▶ Start sequence</button>
+      <button id="camBtn">📷 Start camera</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="main-bottom">
+    <div class="block">
+      <div class="block-head">
+        <strong>Your sequence</strong>
+        <span><span class="muted" id="stripTotal"></span> <button class="link" id="editSeq">✎ Edit</button></span>
+      </div>
+      <div class="strip" id="strip"></div>
     </div>
 
-    <div class="controls pose-picker" id="posePicker"></div>
-    <div class="status" id="status"></div>
-    <div class="hint">
-      Tip: place your device so the camera sees you head-to-toe. Good, even lighting and a plain background help the tracker.
-      Nothing you see here is uploaded — the video and pose detection stay on your machine.
-      <br><br><strong>🟥🟩 Skeleton colours:</strong> every body line the pose checks starts <span style="color:var(--seg-bad)">red</span>
-      and turns <span style="color:var(--good)">green</span> as soon as that part is in alignment — e.g. the line across your
-      shoulders goes green when your shoulders are level. When every checked line is green you're at 100%.
-      <br><br><strong>⏱ Hold timer:</strong> once every checked line is green, the timer counts down (10 seconds by default —
-      change it per pose with − / +). If you slip out of alignment it pauses and carries on when you're back in position.
-      <br><br><strong>📋 My routine:</strong> build a list of poses with a hold time for each (saved on this device).
-      Press <em>Start routine</em> and the app coaches each pose in turn, moving on 3 seconds after each hold is complete.
-      <br><br><strong>Half Forward Fold:</strong> stand side-on to the camera so it can see the angle at your hips.
-      <br><br><strong>🔊 Voice coaching:</strong> click the button to have the app speak your corrections aloud —
-      handy when you're in a pose and can't look at the screen. It speaks the most important fix first,
-      waits a few seconds between cues so it isn't chatty, and praises you when your alignment is good.
-      <br><br><strong>If you see a "model couldn't download" message:</strong> the app needs to fetch the pose model from the internet once.
-      Some networks/firewalls block this when the file is opened directly. The reliable fix is to serve the file from a tiny local server:
-      open a terminal in the folder with this file and run <code>python3 -m http.server 8000</code>, then visit
-      <code>http://localhost:8000/index.html</code> in Chrome.
+    <div class="block">
+      <div class="block-head"><strong>Or practise a single pose</strong></div>
+      <div class="pose-picker" id="posePicker"></div>
     </div>
+    <div class="hint-line">☰ Menu: edit your sequence, help &amp; tips.</div>
   </div>
 
   <div class="right">
-  <div class="panel">
-    <h2 id="poseName">Mountain Pose</h2>
-    <div class="sub" id="poseDesc">Stand tall and grounded.</div>
-
-    <div class="score-wrap">
-      <div class="score-ring" id="ring" style="--pct:0">—</div>
-      <div class="score-label">
-        <strong id="scoreText">Waiting…</strong>
-        Alignment score
-      </div>
-    </div>
-
-    <div class="hold" id="hold">
-      <div class="hold-top">
-        <strong>⏱ Hold timer</strong>
-        <div class="hold-cfg">
-          <button id="holdMinus" title="5 seconds less">−</button>
-          <span id="holdTarget">10s</span>
-          <button id="holdPlus" title="5 seconds more">+</button>
-        </div>
-      </div>
-      <div class="hold-bar"><div id="holdFill"></div></div>
-      <div class="hold-foot">
-        <span class="hold-status" id="holdStatus">Get every line green to start the timer.</span>
-        <button id="holdReset">Restart</button>
-      </div>
-    </div>
-
-    <ul class="cues" id="cues"></ul>
-  </div>
-
-  <div class="panel" id="routinePanel">
-    <h2>📋 My routine</h2>
-    <div class="sub">A list of poses and how long to hold each. Saved on this device — edit it any time.</div>
-    <div class="routine-run" id="routineRun" hidden>
+    <div class="panel run" id="routineRun" hidden>
       <div class="routine-now" id="routineNow"></div>
       <div class="routine-next" id="routineNext"></div>
       <div class="routine-btns">
         <button id="routineSkip">Skip ⏭</button>
-        <button id="routineStop">Stop routine</button>
+        <button id="routineStop">Stop sequence</button>
       </div>
     </div>
-    <ol class="steps" id="steps"></ol>
-    <div class="routine-actions">
-      <button id="addStep">+ Add pose</button>
-      <button id="resetRoutine">Reset to default</button>
-      <button id="startRoutine" class="primary">▶ Start routine</button>
+
+    <div class="panel">
+      <h2 id="poseName">Mountain Pose</h2>
+      <div class="facing-badge" id="facingBadge"></div>
+      <div class="sub" id="poseDesc">Stand tall and grounded.</div>
+
+      <div class="score-wrap">
+        <div class="score-ring" id="ring" style="--pct:0">—</div>
+        <div class="score-label">
+          <strong id="scoreText">Waiting…</strong>
+          Alignment score
+        </div>
+      </div>
+
+      <div class="hold" id="hold">
+        <div class="hold-top">
+          <strong>⏱ Hold timer</strong>
+          <div class="hold-cfg">
+            <button id="holdMinus" title="5 seconds less">−</button>
+            <span id="holdTarget">10s</span>
+            <button id="holdPlus" title="5 seconds more">+</button>
+          </div>
+        </div>
+        <div class="hold-bar"><div id="holdFill"></div></div>
+        <div class="hold-foot">
+          <span class="hold-status" id="holdStatus">Get every line green to start the timer.</span>
+          <button id="holdReset">Restart</button>
+        </div>
+      </div>
+
+      <ul class="cues" id="cues"></ul>
     </div>
-    <div class="routine-total" id="routineTotal"></div>
-  </div>
   </div>
 </div>
 
@@ -310,18 +454,13 @@ const SEG_COLORS = {
 };
 
 // ---------- Geometry helpers (2D, using normalized x/y) ----------
-// IMPORTANT: MediaPipe landmarks are normalized separately by frame width (x)
-// and frame height (y). Camera frames are almost never square (a phone in
-// portrait mode might be 720x1280, a laptop webcam 4:3 or 16:9), so a raw
-// dx/dy comparison silently distorts every angle — this was making "Spine
-// tall & vertical" and similar checks read wrong. frameAspect() converts
-// y into the same units as x (width-relative) before any angle math.
+// MediaPipe landmarks are normalized separately by frame width (x) and height (y).
+// frameAspect() converts y into the same units as x before any angle maths.
 function frameAspect() {
   const w = video.videoWidth, h = video.videoHeight;
   return (w && h) ? (w / h) : (4 / 3);
 }
 function angle(a, b, c) {
-  // angle at point b, in degrees, formed by a-b-c
   const AR = frameAspect();
   const v1x = a.x - b.x, v1y = (a.y - b.y) / AR;
   const v2x = c.x - b.x, v2y = (c.y - b.y) / AR;
@@ -333,39 +472,30 @@ function angle(a, b, c) {
   return Math.acos(cos) * 180 / Math.PI;
 }
 function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
-function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-// verticality of segment a->b: 0deg = perfectly vertical
 function tiltFromVertical(a, b) {
   const AR = frameAspect();
   const dx = b.x - a.x, dy = (b.y - a.y) / AR;
-  // absolute values so direction (up/down, left/right) doesn't matter — 0..90°
-  return Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+  return Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI; // 0..90, 0 = vertical
 }
 function tiltFromHorizontal(a, b) {
   const AR = frameAspect();
   const dx = b.x - a.x, dy = (b.y - a.y) / AR;
   return Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI; // 0..90, 0 = horizontal
 }
-
 function kneeAngles(lm) {
   return {
     l: angle(lm[L.lHip], lm[L.lKnee], lm[L.lAnkle]),
     r: angle(lm[L.rHip], lm[L.rKnee], lm[L.rAnkle]),
   };
 }
-
-// Score a value that should sit inside [lo, hi], degrading past a soft margin
 function within(value, lo, hi) { return value >= lo && value <= hi; }
 
 // ---------- Pose definitions ----------
-// Each cue returns { ok, msg, marks } evaluated against landmarks (lm).
-// marks = [{ segs, ok }] — which skeleton lines this cue controls and whether
-// each one is currently aligned. Lines go green only when every cue that
-// controls them passes.
+// facing: "front" = face the camera, "side" = stand side-on to the camera.
+// say: how the name is spoken. Each cue returns { ok, msg, marks }.
 const POSES = {
   mountain: {
-    name: "Mountain Pose",
-    sanskrit: "Tadasana",
+    name: "Mountain Pose", sanskrit: "Tadasana", say: "Mountain pose", facing: "front",
     desc: "Stand tall, feet grounded, arms relaxed at your sides, spine long.",
     cues: [
       {
@@ -409,15 +539,13 @@ const POSES = {
   },
 
   tree: {
-    name: "Tree Pose",
-    sanskrit: "Vrksasana",
-    desc: "Balance on one leg; place the other foot on your inner thigh or calf. Grow tall.",
+    name: "Tree Pose", sanskrit: "Vrksasana", say: "Tree pose", facing: "front",
+    desc: "Balance on one leg; place the other foot on your inner thigh or calf. Raise your hands overhead and grow tall.",
     cues: [
       {
         label: "Standing on one leg",
         test: (lm) => {
           const k = kneeAngles(lm);
-          // one leg fairly straight (standing), the other clearly bent
           const stand = k.l >= k.r ? "l" : "r";
           const lift = stand === "l" ? "r" : "l";
           const okStand = k[stand] > 160;
@@ -469,9 +597,8 @@ const POSES = {
   },
 
   warrior1: {
-    name: "Warrior I",
-    sanskrit: "Virabhadrasana I",
-    desc: "Best side-on to the camera. Lunge with the front knee toward 90°, back leg long, both arms reaching straight up, chest lifted.",
+    name: "Warrior I", sanskrit: "Virabhadrasana I", say: "Warrior one", facing: "side",
+    desc: "Lunge with the front knee toward 90°, back leg long, both arms reaching straight up, chest lifted.",
     cues: [
       {
         label: "Front knee bent (~90°)",
@@ -526,15 +653,14 @@ const POSES = {
   },
 
   warrior2: {
-    name: "Warrior II",
-    sanskrit: "Virabhadrasana II",
+    name: "Warrior II", sanskrit: "Virabhadrasana II", say: "Warrior two", facing: "front",
     desc: "Wide stance, front knee bent toward 90°, back leg straight, arms reaching out level with the floor.",
     cues: [
       {
         label: "Front knee bent (~90°)",
         test: (lm) => {
           const k = kneeAngles(lm);
-          const frontSide = k.l <= k.r ? "l" : "r"; // the more-bent leg
+          const frontSide = k.l <= k.r ? "l" : "r";
           const front = k[frontSide];
           const ok = within(front, 80, 120);
           return { ok, msg: ok ? "Deep, strong lunge." : (front > 120 ? "Bend the front knee more toward 90°." : "Ease up — don't let the knee pass the ankle."),
@@ -584,9 +710,8 @@ const POSES = {
   },
 
   warrior3: {
-    name: "Warrior III",
-    sanskrit: "Virabhadrasana III",
-    desc: "Side-on to the camera. Balance on one straight leg, tip forward so torso and lifted leg form one level line, arms reaching forward.",
+    name: "Warrior III", sanskrit: "Virabhadrasana III", say: "Warrior three", facing: "side",
+    desc: "Balance on one straight leg, tip forward so torso and lifted leg form one level line, arms reaching forward.",
     cues: [
       {
         label: "Standing leg straight",
@@ -633,9 +758,8 @@ const POSES = {
   },
 
   fold: {
-    name: "Half Forward Fold",
-    sanskrit: "Ardha Uttanasana",
-    desc: "Stand side-on to the camera. Hinge forward from the hips with a long, flat back until the angle between legs and torso is less than 90°. Hands can rest on the floor or shins.",
+    name: "Half Forward Fold", sanskrit: "Ardha Uttanasana", say: "Half forward fold", facing: "side",
+    desc: "Hinge forward from the hips with a long, flat back until the angle between legs and torso is less than 90°. Hands can rest on your shins or the floor.",
     cues: [
       {
         label: "Hinged from the hips (< 90°)",
@@ -686,20 +810,103 @@ function foldHead(lm, s) {
   return (lm[s.ear].visibility ?? 1) > 0.4 ? lm[s.ear] : lm[L.nose];
 }
 
+// ---------- Target-pose outlines ("templates") ----------
+// Each pose's target shape, as seen on screen (the mirrored view).
+// Units: 1.0 = standing body height; x to the right, y up from the floor.
+// Pairs are [screen-left, screen-right]. Side-on poses face screen-right by default;
+// asymmetric front poses have the bent/lifted leg on screen-right by default.
+// The outline flips automatically to match the way the user is facing.
+const TEMPLATES = {
+  mountain: { side: false, head: [0, 0.93],
+    sh: [[-0.11, 0.82], [0.11, 0.82]], el: [[-0.13, 0.65], [0.13, 0.65]], wr: [[-0.14, 0.48], [0.14, 0.48]],
+    hp: [[-0.07, 0.52], [0.07, 0.52]], kn: [[-0.07, 0.28], [0.07, 0.28]], an: [[-0.07, 0.04], [0.07, 0.04]] },
+  tree: { side: false, head: [0, 0.93],
+    sh: [[-0.11, 0.82], [0.11, 0.82]], el: [[-0.15, 0.98], [0.15, 0.98]], wr: [[-0.04, 1.12], [0.04, 1.12]],
+    hp: [[-0.07, 0.52], [0.07, 0.52]], kn: [[-0.07, 0.28], [0.25, 0.37]], an: [[-0.07, 0.04], [-0.03, 0.32]] },
+  warrior2: { side: false, head: [0, 0.77],
+    sh: [[-0.11, 0.66], [0.11, 0.66]], el: [[-0.28, 0.66], [0.28, 0.66]], wr: [[-0.45, 0.66], [0.45, 0.66]],
+    hp: [[-0.07, 0.36], [0.07, 0.36]], kn: [[-0.235, 0.20], [0.31, 0.30]], an: [[-0.40, 0.04], [0.32, 0.04]] },
+  warrior1: { side: true, head: [0.03, 0.79],
+    sh: [[0, 0.68], [0, 0.68]], el: [[0.01, 0.86], [0.01, 0.86]], wr: [[0.02, 1.02], [0.02, 1.02]],
+    hp: [[0, 0.38], [0, 0.38]], kn: [[-0.19, 0.22], [0.23, 0.30]], an: [[-0.38, 0.06], [0.25, 0.04]] },
+  warrior3: { side: true, head: [0.40, 0.555],
+    sh: [[0.30, 0.54], [0.30, 0.54]], el: [[0.47, 0.55], [0.47, 0.55]], wr: [[0.63, 0.555], [0.63, 0.555]],
+    hp: [[0, 0.52], [0, 0.52]], kn: [[0, 0.28], [-0.24, 0.53]], an: [[0, 0.04], [-0.48, 0.54]],
+    ft: [[0.07, 0.01], [-0.49, 0.47]] },
+  fold: { side: true, head: [0.36, 0.41],
+    sh: [[0.27, 0.44], [0.27, 0.44]], el: [[0.25, 0.27], [0.25, 0.27]], wr: [[0.22, 0.12], [0.22, 0.12]],
+    hp: [[-0.02, 0.52], [-0.02, 0.52]], kn: [[0, 0.28], [0, 0.28]], an: [[0, 0.04], [0, 0.04]] },
+};
+const HEAD_R = 0.065;
+const BONE_W = { upper: 0.07, fore: 0.06, thigh: 0.11, shin: 0.08, foot: 0.05, neck: 0.06,
+                 shoulders: 0.08, hips: 0.11, torsoFront: 0.2, torsoSide: 0.15 };
+
+function tplPoints(key, flip = false) {
+  const t = TEMPLATES[key], f = flip ? -1 : 1;
+  const P = ([x, y]) => [x * f, y];
+  const ft = t.ft || t.an.map(([x, y]) => t.side ? [x + 0.07, y - 0.03] : [x + (x < 0 ? -0.03 : 0.03), y - 0.03]);
+  return { side: !!t.side, head: P(t.head), sh: t.sh.map(P), el: t.el.map(P), wr: t.wr.map(P),
+           hp: t.hp.map(P), kn: t.kn.map(P), an: t.an.map(P), ft: ft.map(P) };
+}
+const avg2 = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+function tplBones(p) {
+  const bones = [];
+  for (const i of [0, 1]) {
+    bones.push(
+      { a: p.sh[i], b: p.el[i], w: BONE_W.upper }, { a: p.el[i], b: p.wr[i], w: BONE_W.fore },
+      { a: p.hp[i], b: p.kn[i], w: BONE_W.thigh }, { a: p.kn[i], b: p.an[i], w: BONE_W.shin },
+      { a: p.an[i], b: p.ft[i], w: BONE_W.foot });
+  }
+  const mSh = avg2(p.sh[0], p.sh[1]), mHp = avg2(p.hp[0], p.hp[1]);
+  bones.push({ a: mHp, b: mSh, w: p.side ? BONE_W.torsoSide : BONE_W.torsoFront });
+  bones.push({ a: mSh, b: p.head, w: BONE_W.neck });
+  if (!p.side) bones.push({ a: p.sh[0], b: p.sh[1], w: BONE_W.shoulders }, { a: p.hp[0], b: p.hp[1], w: BONE_W.hips });
+  return { bones, head: p.head, mSh, mHp };
+}
+function tplBBox(key, flip = false) {
+  const { bones, head } = tplBones(tplPoints(key, flip));
+  let x0 = head[0] - HEAD_R, x1 = head[0] + HEAD_R, y0 = 0, y1 = head[1] + HEAD_R;
+  for (const b of bones) for (const q of [b.a, b.b]) {
+    x0 = Math.min(x0, q[0] - b.w / 2); x1 = Math.max(x1, q[0] + b.w / 2);
+    y0 = Math.min(y0, q[1] - b.w / 2); y1 = Math.max(y1, q[1] + b.w / 2);
+  }
+  return { x0, x1, y0, y1, w: x1 - x0, h: y1 - y0 };
+}
+
+// Small SVG drawing of a pose's outline, for buttons and lists.
+function poseIconSVG(key, flip = false) {
+  const g = tplBones(tplPoints(key, flip)), b = tplBBox(key, flip);
+  const size = Math.max(b.w, b.h), pad = 0.02;
+  const vx = (b.x0 + b.x1) / 2 - size / 2 - pad, vy = -((b.y0 + b.y1) / 2) - size / 2 - pad;
+  const lines = g.bones.map(o =>
+    `<line x1="${o.a[0].toFixed(3)}" y1="${(-o.a[1]).toFixed(3)}" x2="${o.b[0].toFixed(3)}" y2="${(-o.b[1]).toFixed(3)}" stroke-width="${(o.w * 0.75).toFixed(3)}"/>`).join("");
+  return `<svg viewBox="${vx.toFixed(3)} ${vy.toFixed(3)} ${(size + 2 * pad).toFixed(3)} ${(size + 2 * pad).toFixed(3)}" aria-hidden="true">` +
+    `<g stroke="currentColor" stroke-linecap="round" fill="none">${lines}</g>` +
+    `<circle cx="${g.head[0]}" cy="${-g.head[1]}" r="${HEAD_R}" fill="currentColor"/></svg>`;
+}
+
 // ---------- App state / DOM ----------
 const video = document.getElementById("video");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
+const stage = document.getElementById("stage");
+const seqBtn = document.getElementById("seqBtn");
+const camBtn = document.getElementById("camBtn");
 const statusEl = document.getElementById("status");
 const placeholder = document.getElementById("placeholder");
 const posePicker = document.getElementById("posePicker");
 const poseNameEl = document.getElementById("poseName");
 const poseDescEl = document.getElementById("poseDesc");
+const facingBadge = document.getElementById("facingBadge");
 const cuesEl = document.getElementById("cues");
 const ring = document.getElementById("ring");
 const scoreText = document.getElementById("scoreText");
+const stageChip = document.getElementById("stageChip");
+const orientCard = document.getElementById("orientCard");
+const orientIcon = document.getElementById("orientIcon");
+const orientText = document.getElementById("orientText");
+const orientSub = document.getElementById("orientSub");
+const placeHint = document.getElementById("placeHint");
 
 let currentPose = "mountain";
 let poseLandmarker = null;
@@ -707,15 +914,27 @@ let running = false;
 let stream = null;
 let lastVideoTime = -1;
 let smoothScore = null;
-// Per-line smoothed "aligned" level (0..1) so colours don't flicker frame to frame
-const segSmooth = new Map();
+const segSmooth = new Map();   // per-line smoothed "aligned" level (0..1)
 
-// Build pose picker buttons
-Object.entries(POSES).forEach(([key, p], i) => {
+// Outline / placement / orientation state
+let tplFlip = false, flipVotes = 0, floorY = null;
+let fitSmooth = 0, placeR = null, placeDx = null, placementSaid = 0;
+let orientRatio = null, orientWrongSince = null, orientWrong = false;
+let introUntil = 0, noBodyShown = false;
+
+const FACING_TEXT = {
+  front: { badge: "👤 Face the camera", card: "Stand facing the camera", speak: "Stand facing the camera.",
+           fix: "Turn to face the camera", fixSpeak: "Turn to face the camera." },
+  side:  { badge: "↔ Stand side-on", card: "Stand side-on to the camera", speak: "Stand side-on to the camera.",
+           fix: "Turn side-on to the camera", fixSpeak: "Turn side-on to the camera." },
+};
+
+// Build single-pose picker buttons
+Object.entries(POSES).forEach(([key, p]) => {
   const b = document.createElement("button");
-  b.textContent = p.name;
+  b.innerHTML = poseIconSVG(key) + "<span>" + p.name + "</span>";
   b.dataset.key = key;
-  if (i === 0) b.classList.add("active");
+  b.title = p.name + " — " + FACING_TEXT[p.facing].badge.replace(/^\S+\s/, "");
   b.addEventListener("click", () => selectPose(key));
   posePicker.appendChild(b);
 });
@@ -730,10 +949,15 @@ function selectPose(key, fromRoutine = false) {
   segSmooth.clear();
   smoothScore = null;
   foldHipAngle = null;
-  renderCues(null); // reset
-  if (typeof resetHold === "function") resetHold();
-  if (typeof resetCoach === "function") resetCoach();
-  if (voiceOn && running) speak(p.name + ". " + p.desc);
+  tplFlip = false; flipVotes = 0; fitSmooth = 0;
+  placeR = null; placeDx = null; placementSaid = 0;
+  orientRatio = null; orientWrongSince = null; orientWrong = false;
+  lastOverlayKey = "";
+  renderFacingBadge();
+  renderCues(null);
+  resetHold();
+  resetCoach();
+  announcePose();
 }
 
 function setStatus(msg, isErr = false) {
@@ -749,20 +973,14 @@ const WASM_CDNS = [
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
 async function loadModel() {
-  if (!navigator.onLine) {
-    throw new Error("offline");
-  }
+  if (!navigator.onLine) throw new Error("offline");
   setStatus("Downloading pose model (first time only)…");
   let vision = null, lastErr = null;
   for (const cdn of WASM_CDNS) {
-    try {
-      vision = await FilesetResolver.forVisionTasks(cdn);
-      break;
-    } catch (e) { lastErr = e; }
+    try { vision = await FilesetResolver.forVisionTasks(cdn); break; }
+    catch (e) { lastErr = e; }
   }
   if (!vision) throw new Error("wasm-fetch:" + (lastErr && lastErr.message));
-
-  // Try GPU acceleration first, fall back to CPU if unavailable.
   for (const delegate of ["GPU", "CPU"]) {
     try {
       poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
@@ -784,8 +1002,13 @@ async function loadModel() {
 }
 
 // ---------- Camera ----------
+function setCamButton() {
+  camBtn.textContent = running ? "■ Stop camera" : "📷 Start camera";
+}
+
 async function start() {
-  startBtn.disabled = true;
+  if (running) return;
+  camBtn.disabled = true;
 
   // 1) Start the camera FIRST so this step is verified on its own.
   try {
@@ -798,14 +1021,17 @@ async function start() {
     await video.play();
     placeholder.classList.add("hidden");
     running = true;
-    stopBtn.disabled = false;
+    camBtn.disabled = false;
+    setCamButton();
+    fitStage();
     requestAnimationFrame(loop);
+    announcePose();
   } catch (e) {
     console.error("camera:", e);
     let m;
     if (/NotAllowed|Permission/i.test(e.name + e.message)) {
       m = location.protocol === "file:"
-        ? "Camera blocked because this page is opened as a local file. Chrome won't show a prompt on file:// pages. Open it via http://localhost instead — see the note below."
+        ? "Camera blocked because this page is opened as a local file. Chrome won't show a prompt on file:// pages. Open it via http://localhost instead — see Help & tips in the ☰ menu."
         : "Camera permission was denied and no prompt appeared. Two things to check: (1) click the camera icon in Chrome's address bar and set it to Allow; (2) on Mac, open System Settings ▸ Privacy & Security ▸ Camera and make sure Chrome is switched on. Then press Start again.";
     } else if (/NotFound|Devices/i.test(e.name)) {
       m = "No camera was found. Check that a webcam is connected and not in use by another app.";
@@ -815,7 +1041,9 @@ async function start() {
       m = "Couldn't open the camera: " + e.message;
     }
     setStatus(m, true);
-    startBtn.disabled = false;
+    camBtn.disabled = false;
+    setCamButton();
+    if (routineActive) stopRoutine();
     return;
   }
 
@@ -830,7 +1058,7 @@ async function start() {
       if (e.message === "offline") {
         msg = "You appear to be offline. The pose model has to download once from the internet — reconnect and press Start again. (Your camera is working.)";
       } else if (e.message.startsWith("wasm-fetch") || e.message.startsWith("model-fetch") || /fetch/i.test(e.message)) {
-        msg = "Camera works, but the pose model couldn't download — a network or firewall is blocking it. Try a different network, or see the note below about running a tiny local server.";
+        msg = "Camera works, but the pose model couldn't download — a network or firewall is blocking it. Try a different network, or see Help & tips in the ☰ menu about running a tiny local server.";
       } else {
         msg = "Camera works, but the pose model failed to load: " + e.message;
       }
@@ -848,47 +1076,280 @@ function stop() {
   stream = null;
   video.srcObject = null;
   placeholder.classList.remove("hidden");
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
+  camBtn.disabled = false;
+  setCamButton();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   segSmooth.clear();
+  floorY = null;
   if (routineActive) stopRoutine();
   resetHold();
+  hideStageOverlays();
   setStatus("Stopped.");
   scoreText.textContent = "Waiting…";
   ring.style.setProperty("--pct", 0);
   ring.textContent = "—";
 }
 
+// Make the stage the same shape as the camera picture so the overlay lines up exactly.
+function fitStage() {
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return;
+  stage.style.setProperty("--ar", w + " / " + h);
+  stage.style.setProperty("--arn", (w / h).toFixed(4));
+}
+
 // ---------- Main loop ----------
 function loop() {
   if (!running) return;
   if (video.readyState >= 2) {
-    if (canvas.width !== video.videoWidth) {
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      fitStage();
     }
-    const now = performance.now();
-    if (poseLandmarker && video.currentTime !== lastVideoTime) {
-      lastVideoTime = video.currentTime;
-      const res = poseLandmarker.detectForVideo(video, now);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (res.landmarks && res.landmarks.length) {
-        const lm = res.landmarks[0];
-        const segState = evaluate(lm);   // work out which lines are aligned first
-        drawSkeleton(lm, segState);      // then draw them in the right colours
-      } else {
-        setStatus("No body detected — make sure you're fully in frame.");
+    if (poseLandmarker) {
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const res = poseLandmarker.detectForVideo(video, performance.now());
+        const lm = res.landmarks && res.landmarks.length ? res.landmarks[0] : null;
+        if (!lm) {
+          if (!noBodyShown) setStatus("No body detected — make sure you're fully in frame.");
+          noBodyShown = true;
+        } else if (noBodyShown) {
+          noBodyShown = false;
+          setStatus("Tracking…");
+        }
+        frame(lm);
       }
+    } else {
+      frame(null);   // model still loading: show the outline so the user can get into place
     }
   }
   requestAnimationFrame(loop);
 }
 
-// ---------- Drawing ----------
-// The canvas is displayed mirrored (CSS scaleX(-1) on #overlay, to match the
-// mirrored video), so any text drawn normally would appear backwards. This
-// draws text with a counter-flip so it reads correctly on screen.
+function frame(lm) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const T = tplLayout(canvas.width, canvas.height);
+  let segState = null;
+  if (lm) {
+    updateFlip(lm);
+    updateOrientation(lm);
+    updatePlacement(lm, T);
+    updateFloor(lm, T);
+    const fit = templateFit(lm, T);
+    fitSmooth = fitSmooth * 0.8 + fit * 0.2;
+    segState = evaluate(lm);
+  } else {
+    orientWrong = false; orientWrongSince = null;
+  }
+  drawTemplate(T, !!lm && fitSmooth >= 0.8);
+  if (lm) drawSkeleton(lm, segState);
+  renderStageOverlays(!!lm);
+}
+
+// ---------- Outline layout, drawing and fit ----------
+// One scale for every pose in the running sequence (or the single pose being practised),
+// so you can stay in the same spot for the whole sequence.
+function tplScale(W, H) {
+  const keys = routineActive && routine.length ? [...new Set(routine.map(s => s.pose))] : [currentPose];
+  let s = Infinity;
+  for (const k of keys) {
+    const b = tplBBox(k);
+    s = Math.min(s, 0.92 * W / b.w, 0.86 * H / b.h);
+  }
+  return s;
+}
+// Template in canvas pixels. The canvas is shown mirrored, so screen x -> canvas x = W - x.
+function tplLayout(W, H) {
+  const s = tplScale(W, H);
+  const b = tplBBox(currentPose, tplFlip);
+  const g = tplBones(tplPoints(currentPose, tplFlip));
+  let floor = floorY ?? H * 0.97;
+  floor = Math.min(floor, H + b.y0 * s - 2);        // keep the feet on screen
+  floor = Math.max(floor, b.y1 * s + H * 0.01);     // keep the head on screen
+  const cx = (b.x0 + b.x1) / 2;
+  const toC = ([x, y]) => ({ x: W - (W / 2 + (x - cx) * s), y: floor - y * s });
+  return {
+    s,
+    bones: g.bones.map(o => ({ a: toC(o.a), b: toC(o.b), w: o.w * s })),
+    head: toC(g.head), headR: HEAD_R * s,
+    mSh: toC(g.mSh), mHp: toC(g.mHp),
+  };
+}
+
+const tplFillCv = document.createElement("canvas");
+const tplRingCv = document.createElement("canvas");
+function paintSilhouette(c, T, shrink, color) {
+  c.save();
+  c.strokeStyle = color; c.fillStyle = color; c.lineCap = "round";
+  for (const b of T.bones) {
+    c.lineWidth = Math.max(1, b.w - 2 * shrink);
+    c.beginPath(); c.moveTo(b.a.x, b.a.y); c.lineTo(b.b.x, b.b.y); c.stroke();
+  }
+  c.beginPath(); c.arc(T.head.x, T.head.y, Math.max(1, T.headR - shrink), 0, Math.PI * 2); c.fill();
+  c.restore();
+}
+function drawTemplate(T, inside) {
+  const W = canvas.width, H = canvas.height;
+  for (const cv of [tplFillCv, tplRingCv]) if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const color = inside ? SEG_COLORS.good : "#bfe3ff";
+  const edge = Math.max(2, W * 0.004);
+  const f = tplFillCv.getContext("2d");
+  f.clearRect(0, 0, W, H);
+  paintSilhouette(f, T, 0, color);
+  const r = tplRingCv.getContext("2d");
+  r.clearRect(0, 0, W, H);
+  paintSilhouette(r, T, 0, color);
+  r.globalCompositeOperation = "destination-out";   // hollow it out, leaving just the outline
+  paintSilhouette(r, T, edge, "#000");
+  r.globalCompositeOperation = "source-over";
+  ctx.save();
+  ctx.globalAlpha = inside ? 0.24 : 0.17;
+  ctx.drawImage(tplFillCv, 0, 0);
+  ctx.globalAlpha = 0.9;
+  ctx.drawImage(tplRingCv, 0, 0);
+  ctx.restore();
+}
+
+function segDist(p, a, b) {
+  const vx = b.x - a.x, vy = b.y - a.y, len2 = vx * vx + vy * vy;
+  let t = len2 ? ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
+}
+// Share of the user's key points (nose, shoulders, elbows, wrists, hips, knees, ankles) inside the outline.
+function templateFit(lm, T) {
+  const W = canvas.width, H = canvas.height, tol = 0.045 * T.s;
+  const ids = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+  let inside = 0;
+  for (const i of ids) {
+    const p = { x: lm[i].x * W, y: lm[i].y * H };
+    let best = Math.hypot(p.x - T.head.x, p.y - T.head.y) - T.headR;
+    for (const b of T.bones) best = Math.min(best, segDist(p, b.a, b.b) - b.w / 2);
+    if (best <= tol) inside++;
+  }
+  const n = { x: lm[L.nose].x * W, y: lm[L.nose].y * H };
+  if (Math.hypot(n.x - T.head.x, n.y - T.head.y) - T.headR <= tol) inside++;
+  return inside / (ids.length + 1);
+}
+
+// Which way should the outline face? Decided from the user's body, in screen (mirrored) terms.
+function desiredFlip(lm) {
+  const sx = (i) => 1 - lm[i].x;
+  const hipX = (sx(L.lHip) + sx(L.rHip)) / 2;
+  const k = kneeAngles(lm);
+  switch (currentPose) {
+    case "tree":     return sx(k.l < k.r ? L.lKnee : L.rKnee) < hipX;   // lifted knee points left
+    case "warrior2": return sx(k.l < k.r ? L.lKnee : L.rKnee) < hipX;   // bent knee on the left
+    case "warrior1": return sx(k.l < k.r ? L.lAnkle : L.rAnkle) < hipX; // front foot on the left
+    case "warrior3":
+    case "fold":     return sx(L.nose) < hipX;                          // head on the left
+    default:         return false;
+  }
+}
+function updateFlip(lm) {
+  const d = desiredFlip(lm);
+  if (d !== tplFlip) {
+    if (++flipVotes > 12) { tplFlip = d; flipVotes = 0; }
+  } else flipVotes = 0;
+}
+
+// Facing check: shoulder width compared with torso length (both in pixels).
+// Facing the camera ≈ 0.6–0.9; side-on ≈ 0.1–0.3.
+function updateOrientation(lm) {
+  const W = canvas.width, H = canvas.height;
+  const px = (i) => ({ x: lm[i].x * W, y: lm[i].y * H });
+  const ls = px(L.lShoulder), rs = px(L.rShoulder), lh = px(L.lHip), rh = px(L.rHip);
+  const shW = Math.hypot(ls.x - rs.x, ls.y - rs.y);
+  const torso = Math.hypot((ls.x + rs.x - lh.x - rh.x) / 2, (ls.y + rs.y - lh.y - rh.y) / 2);
+  if (torso < 1) return;
+  const ratio = shW / torso;
+  orientRatio = orientRatio == null ? ratio : orientRatio * 0.85 + ratio * 0.15;
+  const want = POSES[currentPose].facing;
+  const wrong = want === "side" ? orientRatio > 0.5 : orientRatio < 0.32;
+  const now = performance.now();
+  if (wrong) {
+    if (orientWrongSince == null) orientWrongSince = now;
+    orientWrong = now - orientWrongSince > 900;
+  } else { orientWrongSince = null; orientWrong = false; }
+}
+
+// Size and position of the user compared with the outline.
+function updatePlacement(lm, T) {
+  const W = canvas.width, H = canvas.height;
+  const sh = { x: (lm[11].x + lm[12].x) / 2 * W, y: (lm[11].y + lm[12].y) / 2 * H };
+  const hp = { x: (lm[23].x + lm[24].x) / 2 * W, y: (lm[23].y + lm[24].y) / 2 * H };
+  const userTorso = Math.hypot(sh.x - hp.x, sh.y - hp.y);
+  const tplTorso = Math.hypot(T.mSh.x - T.mHp.x, T.mSh.y - T.mHp.y);
+  if (tplTorso < 1) return;
+  const r = userTorso / tplTorso;
+  const dx = ((W - hp.x) - (W - T.mHp.x)) / tplTorso;   // + = user is to the right of the outline on screen
+  placeR = placeR == null ? r : placeR * 0.85 + r * 0.15;
+  placeDx = placeDx == null ? dx : placeDx * 0.85 + dx * 0.15;
+}
+// The outline stands on the same floor as the user: its feet follow the user's lower ankle.
+function updateFloor(lm, T) {
+  const H = canvas.height;
+  const vis = Math.max(lm[L.lAnkle].visibility ?? 1, lm[L.rAnkle].visibility ?? 1);
+  const ankY = Math.max(lm[L.lAnkle].y, lm[L.rAnkle].y) * H;
+  if (vis > 0.5 && ankY < H * 0.995) {
+    const target = ankY + 0.04 * T.s;
+    floorY = floorY == null ? target : floorY * 0.9 + target * 0.1;
+  }
+}
+
+// ---------- Stage overlays (not mirrored, so text reads normally) ----------
+let lastOverlayKey = "";
+function hideStageOverlays() {
+  stageChip.hidden = true; orientCard.hidden = true; placeHint.hidden = true;
+  lastOverlayKey = "";
+}
+function placementHint(hasBody) {
+  if (!poseLandmarker) return { text: "Loading the pose tracker…", cls: "" };
+  if (!hasBody) return { text: "Step into view — your whole body should be visible", cls: "adjust" };
+  if (placeR != null && placeR > 1.18) return { text: "Step back a little — you're bigger than the outline", cls: "adjust" };
+  if (placeR != null && placeR < 0.82) return { text: "Come a little closer — you're smaller than the outline", cls: "adjust" };
+  if (placeDx != null && placeDx > 0.6) return { text: "◀ Move a little to your left", cls: "adjust" };
+  if (placeDx != null && placeDx < -0.6) return { text: "Move a little to your right ▶", cls: "adjust" };
+  if (fitSmooth >= 0.8) return { text: "✓ You're inside the outline", cls: "good" };
+  return { text: "Fit your body inside the outline", cls: "" };
+}
+function renderStageOverlays(hasBody) {
+  const p = POSES[currentPose], F = FACING_TEXT[p.facing];
+  const showIntro = performance.now() < introUntil;
+  const hint = placementHint(hasBody);
+  const key = [currentPose, orientWrong, showIntro, hint.text, hint.cls, tplFlip].join("|");
+  if (key === lastOverlayKey) return;
+  lastOverlayKey = key;
+
+  stageChip.hidden = false;
+  stageChip.textContent = p.name + " · " + F.badge;
+
+  if (orientWrong || showIntro) {
+    orientCard.hidden = false;
+    orientCard.classList.toggle("warn", orientWrong);
+    orientIcon.innerHTML = poseIconSVG(currentPose, tplFlip);
+    orientText.textContent = orientWrong ? F.fix : F.card;
+    orientSub.textContent = orientWrong
+      ? "The outline shows the pose from this angle."
+      : p.name + " — step into the outline.";
+  } else {
+    orientCard.hidden = true;
+  }
+  placeHint.hidden = orientWrong || showIntro;
+  placeHint.textContent = hint.text;
+  placeHint.className = "place-hint" + (hint.cls ? " " + hint.cls : "");
+  renderFacingBadge();
+}
+function renderFacingBadge() {
+  const F = FACING_TEXT[POSES[currentPose].facing];
+  facingBadge.textContent = orientWrong ? "⚠ " + F.fix : F.badge;
+  facingBadge.classList.toggle("warn", orientWrong);
+}
+
+// ---------- Skeleton drawing ----------
+// The canvas is displayed mirrored, so text is drawn with a counter-flip to read correctly.
 function drawMirroredText(text, x, y, color, size) {
   ctx.save();
   ctx.translate(x, y);
@@ -901,16 +1362,12 @@ function drawMirroredText(text, x, y, color, size) {
   ctx.restore();
 }
 
-// Per-pose tolerance for the spine/torso vertical-tilt guide (mirrors the
-// thresholds used by each pose's own cue, just kept in one place for drawing).
 const SPINE_TOLERANCE_DEG = { mountain: 10, tree: 14, warrior2: 18 };
 
-// segState: Map of line key -> true/false for lines checked by the current pose.
 function segColor(key, segState) {
   if (!segState.has(key)) return SEG_COLORS.idle;
   return (segSmooth.get(key) ?? 0) >= 0.5 ? SEG_COLORS.good : SEG_COLORS.bad;
 }
-
 function drawLine(p1, p2, color, width) {
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
@@ -923,22 +1380,11 @@ function drawLine(p1, p2, color, width) {
 function drawSkeleton(lm, segState) {
   const W = canvas.width, H = canvas.height;
 
-  // 1) Vertical center guide — helps you frame/center yourself in the shot.
-  ctx.save();
-  ctx.setLineDash([6, 8]);
-  ctx.strokeStyle = "rgba(255,255,255,0.22)";
-  ctx.lineWidth = Math.max(1.5, W * 0.0025);
-  ctx.beginPath();
-  ctx.moveTo(W / 2, 0);
-  ctx.lineTo(W / 2, H);
-  ctx.stroke();
-  ctx.restore();
-
-  // 2) Skeleton — each checked line is red until aligned, then green; unchecked lines grey.
+  // 1) Skeleton — checked lines red until aligned, then green; unchecked lines grey.
   const P = (p) => ({ x: p.x * W, y: p.y * H });
   const base = Math.max(3, W * 0.006);
   ctx.lineCap = "round";
-  const jointStates = {}; // joint index -> list of colours of lines touching it
+  const jointStates = {};
   for (const [a, b] of CONNECTIONS) {
     const key = segKey([a, b]);
     const color = segColor(key, segState);
@@ -949,8 +1395,6 @@ function drawSkeleton(lm, segState) {
       (jointStates[b] = jointStates[b] || []).push(color);
     }
   }
-
-  // Joints: red if any checked line through it is off, green if all are aligned
   const r = Math.max(4, W * 0.008);
   for (const i of Object.values(L)) {
     const cs = jointStates[i];
@@ -961,12 +1405,9 @@ function drawSkeleton(lm, segState) {
     ctx.fill();
   }
 
-  // 3) Shoulder-level and hip-level guides — dashed horizontal lines that
-  // turn green when level, red when they're not, so you can see which
-  // side to lower/raise without reading the checklist.
+  // 2) Shoulder-level and hip-level guides.
   const shoulderMid = mid(lm[L.lShoulder], lm[L.rShoulder]);
   const hipMid = mid(lm[L.lHip], lm[L.rHip]);
-  // Only colour a guide if the current pose actually checks it; otherwise grey.
   [
     { y: shoulderMid.y * H, key: "11-12" },
     { y: hipMid.y * H, key: "23-24" },
@@ -984,15 +1425,10 @@ function drawSkeleton(lm, segState) {
     ctx.restore();
   });
 
-  // 4) Spine indicator — the actual measurement behind "Spine tall &
-  // vertical" / "Torso upright", drawn directly on screen: a dashed true
-  // vertical from the hip, the real hip->shoulder line colored by whether
-  // it's within tolerance, bright markers at both points, and the live
-  // tilt angle in degrees so you can see exactly how far off you are.
+  // 3) Spine indicator with live degree readout.
   const hipPx = { x: hipMid.x * W, y: hipMid.y * H };
   const shoulderPx = { x: shoulderMid.x * W, y: shoulderMid.y * H };
   const tiltDeg = tiltFromVertical(hipMid, shoulderMid);
-  // Colour follows the pose's own torso check (upright for standing poses, hinged for the fold).
   const spineOk = segState.has("spine")
     ? segColor("spine", segState) === SEG_COLORS.good
     : tiltDeg < (SPINE_TOLERANCE_DEG[currentPose] ?? 12);
@@ -1006,7 +1442,6 @@ function drawSkeleton(lm, segState) {
   ctx.moveTo(hipPx.x, hipPx.y);
   ctx.lineTo(hipPx.x, shoulderPx.y);
   ctx.stroke();
-
   ctx.setLineDash([]);
   ctx.strokeStyle = spineColor;
   ctx.lineWidth = Math.max(4, W * 0.008);
@@ -1026,18 +1461,13 @@ function drawSkeleton(lm, segState) {
   const readout = (currentPose === "fold" && foldHipAngle != null) ? `hip ${foldHipAngle.toFixed(0)}°`
     : currentPose === "warrior3" ? `${(90 - tiltDeg).toFixed(0)}° from level`
     : `${tiltDeg.toFixed(0)}°`;
-  drawMirroredText(
-    readout,
-    (hipPx.x + shoulderPx.x) / 2 - W * 0.06,
-    (hipPx.y + shoulderPx.y) / 2,
-    spineColor,
-    Math.max(14, Math.round(W * 0.022))
-  );
+  drawMirroredText(readout, (hipPx.x + shoulderPx.x) / 2 - W * 0.06, (hipPx.y + shoulderPx.y) / 2,
+    spineColor, Math.max(14, Math.round(W * 0.022)));
 
-  // 5) Hold countdown, big and centred at the top of the video
+  // 4) Hold countdown, big, in the top-right corner of the screen (canvas x is mirrored)
   if (holdStarted) {
     const left = Math.max(0, Math.ceil(holdTarget() - holdElapsed));
-    drawMirroredText(holdDone ? "✓" : String(left), W / 2, H * 0.1,
+    drawMirroredText(holdDone ? "✓" : String(left), W * 0.1, H * 0.1,
       holdDone ? SEG_COLORS.good : (holdActive ? "#ffffff" : "rgba(255,255,255,0.45)"),
       Math.max(36, Math.round(W * 0.08)));
   }
@@ -1045,13 +1475,18 @@ function drawSkeleton(lm, segState) {
 
 // ---------- Voice coaching (Web Speech API — built in, offline) ----------
 const voiceBtn = document.getElementById("voiceBtn");
-let voiceOn = false;
+const VOICE_KEY = "samajyoga.voice";
+let voiceOn = true;
+try { voiceOn = localStorage.getItem(VOICE_KEY) !== "off"; } catch (e) {}
+if (!("speechSynthesis" in window)) voiceOn = false;
 let ttsVoice = null;
 let lastCueSpoken = "";
 let lastSpeakAt = 0;
 let praiseGiven = false;
-const SPEAK_INTERVAL = 4000;   // min gap between different corrections
-const REPEAT_INTERVAL = 8000;  // min gap before repeating the SAME correction
+let introActive = false, introTimer = null;
+const SPEAK_INTERVAL = 4000;   // min gap between different prompts
+const REPEAT_INTERVAL = 8000;  // min gap before repeating the SAME prompt
+const MAX_PLACEMENT_PROMPTS = 2;
 const PRAISES = ["Beautiful. Hold it there.", "That's it — lovely alignment.", "Perfect. Stay with the breath.", "Great posture. Hold and breathe."];
 
 function pickVoice() {
@@ -1067,7 +1502,6 @@ if ("speechSynthesis" in window) {
   pickVoice();
 }
 
-// Make spoken text sound natural (screen msgs use symbols speech reads oddly)
 function cleanForSpeech(s) {
   return s
     .replace(/°/g, " degrees")
@@ -1077,32 +1511,67 @@ function cleanForSpeech(s) {
     .trim();
 }
 
-function speak(text, { interrupt = true } = {}) {
+function speak(text, { interrupt = true, onend = null } = {}) {
   if (!voiceOn || !("speechSynthesis" in window)) return;
-  if (interrupt) window.speechSynthesis.cancel(); // avoid a backlog of stale cues
-  const u = new SpeechSynthesisUtterance(text);
+  if (interrupt) window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
   if (ttsVoice) u.voice = ttsVoice;
   u.lang = (ttsVoice && ttsVoice.lang) || "en-US";
-  // Slower pace + lower pitch reads as a calmer, gentler coach rather than a rushed, sharp voice.
   u.rate = 0.82; u.pitch = 0.78; u.volume = 1.0;
+  if (onend) { u.onend = onend; u.onerror = onend; }
   window.speechSynthesis.speak(u);
+}
+// Phones only allow speech that starts from a tap; call this inside click handlers.
+function primeSpeech() {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(" ");
+  u.volume = 0;
+  window.speechSynthesis.speak(u);
+}
+
+// Announce the pose: the card on screen shows for 4 s; the voice says the pose,
+// which way to face, the description and "step into the outline".
+function announcePose() {
+  introUntil = performance.now() + 4000;
+  lastOverlayKey = "";
+  if (!voiceOn || !running) return;
+  const p = POSES[currentPose];
+  introActive = true;
+  clearTimeout(introTimer);
+  introTimer = setTimeout(() => { introActive = false; }, 15000);
+  speak(`${p.say}. ${FACING_TEXT[p.facing].speak} ${p.desc} Step into the outline.`, {
+    onend: () => { introActive = false; lastSpeakAt = performance.now(); }
+  });
 }
 
 function resetCoach() { lastCueSpoken = ""; lastSpeakAt = 0; praiseGiven = false; }
 
+// Spoken prompts in priority order: facing the wrong way → not in the outline → first failing cue.
 function coach(results) {
-  if (!voiceOn || !running) return;
+  if (!voiceOn || !running || introActive) return;
   const now = performance.now();
-  const firstFail = results.find(r => !r.ok);
-  if (firstFail) {
+  let line = null, isPlacement = false;
+  if (orientWrong) {
+    line = FACING_TEXT[POSES[currentPose].facing].fixSpeak;
+  } else if (!holdActive && placementSaid < MAX_PLACEMENT_PROMPTS && placeR != null &&
+             (placeR > 1.25 || placeR < 0.78 || Math.abs(placeDx) > 0.8)) {
+    isPlacement = true;
+    line = placeR > 1.25 ? "Step back a little, so you fit the outline."
+         : placeR < 0.78 ? "Come a little closer, so you fill the outline."
+         : placeDx > 0 ? "Move a little to your left." : "Move a little to your right.";
+  } else {
+    const firstFail = results.find(r => !r.ok);
+    if (firstFail) line = cleanForSpeech(firstFail.msg);
+  }
+  if (line) {
     praiseGiven = false;
-    const line = cleanForSpeech(firstFail.msg);
     const isSame = line === lastCueSpoken;
     const gap = now - lastSpeakAt;
     if ((!isSame && gap > SPEAK_INTERVAL) || (isSame && gap > REPEAT_INTERVAL)) {
       speak(line);
       lastCueSpoken = line;
       lastSpeakAt = now;
+      if (isPlacement) placementSaid++;
     }
   } else if (!praiseGiven && now - lastSpeakAt > 1500) {
     const p = PRAISES[Math.floor(Math.random() * PRAISES.length)];
@@ -1113,23 +1582,29 @@ function coach(results) {
   }
 }
 
+function renderVoiceBtn() {
+  voiceBtn.classList.toggle("voice-on", voiceOn);
+  voiceBtn.textContent = voiceOn ? "🔊 Voice on" : "🔇 Voice off";
+}
 function toggleVoice() {
   if (!("speechSynthesis" in window)) {
     setStatus("This browser doesn't support speech. Try the latest Chrome.", true);
     return;
   }
   voiceOn = !voiceOn;
-  voiceBtn.classList.toggle("voice-on", voiceOn);
-  voiceBtn.textContent = voiceOn ? "🔊 Voice coaching: on" : "🔊 Voice coaching: off";
+  try { localStorage.setItem(VOICE_KEY, voiceOn ? "on" : "off"); } catch (e) {}
+  renderVoiceBtn();
   if (voiceOn) {
     pickVoice();
     resetCoach();
-    speak("Voice coaching on. I'll guide your alignment."); // also unlocks audio via this click
+    speak("Voice coaching on. I'll guide your alignment.");
   } else {
     window.speechSynthesis.cancel();
+    introActive = false;
   }
 }
 voiceBtn.addEventListener("click", toggleVoice);
+renderVoiceBtn();
 
 // ---------- Hold timer (per pose, default 10 s, remembered on this device) ----------
 const HOLD_DEFAULT = 10, HOLD_STEP = 5, HOLD_MIN = 5, HOLD_MAX = 120;
@@ -1167,7 +1642,6 @@ function renderHold() {
     !holdStarted ? "Get every line green to start the timer." :
     holdActive ? "Holding… " + left + "s left" :
     "Paused — realign to continue (" + left + "s left)";
-  // In a routine the hold time comes from the routine step, so the −/+ buttons are locked.
   holdMinusBtn.disabled = holdPlusBtn.disabled = routineActive;
   renderRoutineRun();
 }
@@ -1177,8 +1651,7 @@ function updateHold(allOk) {
   lastHoldTick = now;
   if (holdDone) return;
   if (allOk) { lastAlignedAt = now; holdStarted = true; }
-  // brief tracking wobbles (under 0.6 s) don't pause the clock
-  holdActive = holdStarted && now - lastAlignedAt < 600;
+  holdActive = holdStarted && now - lastAlignedAt < 600;   // brief tracking wobbles don't pause the clock
   if (holdActive) {
     holdElapsed += dt;
     const left = holdTarget() - holdElapsed;
@@ -1202,7 +1675,6 @@ holdPlusBtn.addEventListener("click", () => setHoldTarget(holdTarget() + HOLD_ST
 document.getElementById("holdReset").addEventListener("click", resetHold);
 
 // ---------- Evaluation ----------
-// Returns a Map of skeleton line key -> aligned (true/false) for colouring.
 function evaluate(lm) {
   const pose = POSES[currentPose];
   const segState = new Map();
@@ -1211,23 +1683,18 @@ function evaluate(lm) {
     for (const m of (r.marks || [])) {
       for (const s of m.segs) {
         const k = segKey(s);
-        // a line is aligned only if EVERY cue that checks it passes
-        segState.set(k, (segState.has(k) ? segState.get(k) : true) && m.ok);
+        segState.set(k, (segState.has(k) ? segState.get(k) : true) && m.ok);   // aligned only if EVERY cue passes
       }
     }
     return { label: c.label, ok: r.ok, msg: r.msg };
   });
-
-  // Smooth each line's state so colours don't flicker
   for (const [k, ok] of segState) {
     const prev = segSmooth.get(k);
     const target = ok ? 1 : 0;
     segSmooth.set(k, prev == null ? target : prev * 0.6 + target * 0.4);
   }
-
   const passed = results.filter(r => r.ok).length;
   const rawScore = Math.round((passed / results.length) * 100);
-  // smooth to reduce jitter
   smoothScore = smoothScore == null ? rawScore : smoothScore * 0.7 + rawScore * 0.3;
   renderCues(results, Math.round(smoothScore));
   updateHold(results.every(r => r.ok));
@@ -1265,18 +1732,28 @@ function renderCues(results, score) {
   }
 }
 
-// ---------- My routine (list of poses + hold times, saved on this device) ----------
-// Pose choices come from POSES, so any pose added there appears here automatically.
-const ROUTINE_KEY = "samajyoga.routine";
+// ---------- My sequence (list of poses + hold times, saved on this device) ----------
+// Default: the facing-the-camera poses first, then the side-on poses, so you only turn once.
+const ROUTINE_KEY = "samajyoga.sequence";
+const DEFAULT_SEQUENCE = [
+  { pose: "mountain", secs: 15 },
+  { pose: "tree",     secs: 20 },
+  { pose: "warrior2", secs: 20 },
+  { pose: "warrior1", secs: 20 },
+  { pose: "warrior3", secs: 15 },
+  { pose: "fold",     secs: 20 },
+];
 const STEP_MIN = 5, STEP_MAX = 300, STEP_DEFAULT = 10, STEP_INC = 5, NEXT_DELAY_MS = 3000;
 const stepsEl = document.getElementById("steps");
+const stripEl = document.getElementById("strip");
+const stripTotalEl = document.getElementById("stripTotal");
 const routineRunEl = document.getElementById("routineRun");
 const routineNowEl = document.getElementById("routineNow");
 const routineNextEl = document.getElementById("routineNext");
 const routineTotalEl = document.getElementById("routineTotal");
-const startRoutineBtn = document.getElementById("startRoutine");
 const addStepBtn = document.getElementById("addStep");
 const resetRoutineBtn = document.getElementById("resetRoutine");
+const drawerStartBtn = document.getElementById("drawerStart");
 
 let routineActive = false, routineIndex = 0, routineTimer = null, routineFinished = false;
 
@@ -1286,13 +1763,12 @@ function clampSecs(v) {
   return Math.min(STEP_MAX, Math.max(STEP_MIN, v));
 }
 function defaultRoutine() {
-  return Object.keys(POSES).map(pose => ({ pose, secs: STEP_DEFAULT }));
+  return DEFAULT_SEQUENCE.filter(st => POSES[st.pose]).map(st => ({ ...st }));
 }
 function loadRoutine() {
   try {
     const r = JSON.parse(localStorage.getItem(ROUTINE_KEY));
     if (Array.isArray(r)) {
-      // drop steps whose pose no longer exists; tidy up the seconds
       return r.filter(st => st && POSES[st.pose]).map(st => ({ pose: st.pose, secs: clampSecs(st.secs) }));
     }
   } catch (e) {}
@@ -1313,7 +1789,7 @@ function renderSteps() {
   if (!routine.length) {
     const p = document.createElement("div");
     p.className = "routine-empty";
-    p.textContent = "Your routine is empty — press “+ Add pose” to start building it.";
+    p.textContent = "Your sequence is empty — press “+ Add pose” to start building it.";
     stepsEl.appendChild(p);
   }
   routine.forEach((st, i) => {
@@ -1324,11 +1800,14 @@ function renderSteps() {
     const num = document.createElement("span");
     num.className = "num"; num.textContent = i + 1;
 
+    const ico = document.createElement("span");
+    ico.className = "ico"; ico.innerHTML = poseIconSVG(st.pose);
+
     const sel = document.createElement("select");
     sel.setAttribute("aria-label", "Pose for step " + (i + 1));
     for (const [key, p] of Object.entries(POSES)) {
       const o = document.createElement("option");
-      o.value = key; o.textContent = p.name;
+      o.value = key; o.textContent = p.name + (p.facing === "side" ? " (side-on)" : "");
       if (key === st.pose) o.selected = true;
       sel.appendChild(o);
     }
@@ -1360,24 +1839,61 @@ function renderSteps() {
     del.addEventListener("click", () => { routine.splice(i, 1); saveRoutine(); renderSteps(); });
     move.append(up, down, del);
 
-    // No editing while a routine is running
+    const ctl = document.createElement("div");
+    ctl.className = "ctl";
+    ctl.append(secs, move);
+
     if (routineActive) [sel, minus, inp, plus, up, down, del].forEach(el => el.disabled = true);
 
-    li.append(num, sel, secs, move);
+    li.append(num, ico, sel, ctl);
     stepsEl.appendChild(li);
   });
   const total = routine.reduce((t, st) => t + st.secs, 0);
-  routineTotalEl.textContent = routine.length
+  const totalText = routine.length
     ? `${routine.length} pose${routine.length === 1 ? "" : "s"} · ${fmtDuration(total)} of holding`
     : "";
+  routineTotalEl.textContent = totalText;
+  stripTotalEl.textContent = totalText;
   addStepBtn.disabled = resetRoutineBtn.disabled = routineActive;
-  startRoutineBtn.disabled = routineActive || !routine.length;
+  drawerStartBtn.disabled = routineActive || !routine.length;
+  renderSeqButton();
+  renderStrip();
+}
+
+// Read-only summary of the sequence on the main screen.
+function renderStrip() {
+  stripEl.innerHTML = "";
+  if (!routine.length) {
+    stripEl.innerHTML = '<span class="muted" style="color:var(--muted);font-size:13px">Empty — tap ✎ Edit to add poses.</span>';
+    return;
+  }
+  routine.forEach((st, i) => {
+    if (i) {
+      const a = document.createElement("span");
+      a.className = "arrow"; a.textContent = "→";
+      stripEl.appendChild(a);
+    }
+    const c = document.createElement("span");
+    c.className = "chip";
+    if (routineActive && i === routineIndex) c.classList.add("current");
+    if (routineActive && i < routineIndex) c.classList.add("done");
+    c.innerHTML = poseIconSVG(st.pose) + "<span>" + POSES[st.pose].name + "</span><small>" + st.secs + "s</small>";
+    c.title = POSES[st.pose].name + " — " + (POSES[st.pose].facing === "side" ? "side-on" : "facing the camera");
+    stripEl.appendChild(c);
+  });
+}
+
+function renderSeqButton() {
+  seqBtn.textContent = routineActive ? "■ Stop sequence" : "▶ Start sequence";
+  seqBtn.classList.toggle("primary", !routineActive);
+  seqBtn.classList.toggle("danger", routineActive);
+  seqBtn.disabled = !routineActive && !routine.length;
 }
 
 function renderRoutineRun() {
   routineRunEl.hidden = !(routineActive || routineFinished);
   if (routineFinished && !routineActive) {
-    routineNowEl.textContent = "Routine complete ✓ — great work!";
+    routineNowEl.textContent = "Sequence complete ✓ — great work!";
     routineNextEl.textContent = "";
     return;
   }
@@ -1392,13 +1908,15 @@ function renderRoutineRun() {
 function goToStep(i) {
   clearTimeout(routineTimer);
   routineIndex = i;
-  selectPose(routine[i].pose, true);   // also resets the hold timer to this step's time
+  selectPose(routine[i].pose, true);   // also resets the hold timer and announces the pose
   renderSteps();
   renderRoutineRun();
 }
 function startRoutine() {
   if (!routine.length) return;
+  primeSpeech();
   routineActive = true; routineFinished = false;
+  floorY = null;
   goToStep(0);
   if (!running) start();
 }
@@ -1412,7 +1930,7 @@ function stopRoutine() {
 function finishRoutine() {
   clearTimeout(routineTimer);
   routineActive = false; routineFinished = true;
-  speak("Routine complete. Great work.");
+  speak("Sequence complete. Great work.");
   lastSpeakAt = performance.now();
   resetHold();
   renderSteps();
@@ -1423,7 +1941,6 @@ function nextStep() {
   if (routineIndex + 1 < routine.length) goToStep(routineIndex + 1);
   else finishRoutine();
 }
-// Called by the hold timer when a hold finishes
 function onHoldComplete() {
   if (!routineActive) return;
   clearTimeout(routineTimer);
@@ -1435,26 +1952,47 @@ addStepBtn.addEventListener("click", () => {
   saveRoutine(); renderSteps();
 });
 resetRoutineBtn.addEventListener("click", () => {
-  if (!confirm("Replace your routine with the default list (every pose, 10 s each)?")) return;
+  if (!confirm("Replace your sequence with the default one (all six poses — facing the camera first, then side-on)?")) return;
   routine = defaultRoutine(); saveRoutine(); renderSteps();
 });
-startRoutineBtn.addEventListener("click", startRoutine);
 document.getElementById("routineSkip").addEventListener("click", nextStep);
 document.getElementById("routineStop").addEventListener("click", stopRoutine);
+seqBtn.addEventListener("click", () => routineActive ? stopRoutine() : startRoutine());
+drawerStartBtn.addEventListener("click", () => { closeDrawer(); startRoutine(); });
+camBtn.addEventListener("click", () => {
+  if (running) { stop(); return; }
+  primeSpeech();
+  start();
+});
+
+// ---------- Side drawer ----------
+const drawer = document.getElementById("drawer");
+const backdrop = document.getElementById("backdrop");
+const menuBtn = document.getElementById("menuBtn");
+function openDrawer() {
+  drawer.classList.add("open"); backdrop.classList.add("show");
+  drawer.setAttribute("aria-hidden", "false"); menuBtn.setAttribute("aria-expanded", "true");
+}
+function closeDrawer() {
+  drawer.classList.remove("open"); backdrop.classList.remove("show");
+  drawer.setAttribute("aria-hidden", "true"); menuBtn.setAttribute("aria-expanded", "false");
+}
+menuBtn.addEventListener("click", openDrawer);
+document.getElementById("editSeq").addEventListener("click", openDrawer);
+document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+backdrop.addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
 
 // init
 renderSteps();
 selectPose("mountain");
-startBtn.addEventListener("click", start);
-stopBtn.addEventListener("click", stop);
+setCamButton();
 
-// Warn up front if opened as a file:// page — Chrome blocks the camera there
-// (denies with no prompt) and often blocks the model download too.
 if (location.protocol === "file:") {
-  setStatus("⚠ This page is opened as a local file, and Chrome blocks the camera on file:// pages (that's why no permission prompt appears). Run it from a local server instead — see the note below.", true);
+  setStatus("⚠ This page is opened as a local file, and Chrome blocks the camera on file:// pages (that's why no permission prompt appears). Run it from a local server instead — see Help & tips in the ☰ menu.", true);
 }
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-  setStatus("This browser doesn't expose camera access here. Use Chrome, and open the page via http://localhost (see the note below).", true);
+  setStatus("This browser doesn't expose camera access here. Use Chrome, and open the page via http://localhost (see Help & tips in the ☰ menu).", true);
 }
 </script>
 </body>
