@@ -111,17 +111,17 @@
   .section-title { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
   .pose-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .pose-tile {
-    height: 96px; border-radius: 18px; border: 1px solid var(--line); background: var(--card);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 4px;
-    font-size: 12.5px; font-weight: 600; text-align: center;
+    min-height: 96px; border-radius: 18px; border: 1px solid var(--line); background: var(--card);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px 4px;
+    font-size: 12.5px; font-weight: 600; text-align: center; line-height: 1.25;
   }
+  .tile-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--sage); margin-top: 4px; }
+  .tile-group svg { width: 15px; height: 15px; }
+  .tile-group:first-child { margin-top: 0; }
   .pose-tile:hover { border-color: var(--sage-mid); }
   .pose-tile .ico { width: 40px; height: 40px; }
   .pose-tile small { font-size: 11px; color: var(--muted); font-weight: 500; }
-  @media (max-width: 819px) {
-    .pose-tiles { display: flex; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px 4px; }
-    .pose-tile { flex: none; width: 92px; }
-  }
+  @media (max-width: 380px) { .pose-tile { font-size: 11.5px; } }
   .tips { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
   .tip { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; line-height: 1.45; }
   .tip .tile { width: 34px; height: 34px; border-radius: 10px; }
@@ -860,15 +860,320 @@ const POSES = {
   }
 };
 
-// Side-view helpers for the forward fold: use whichever side the camera sees best.
+// ---------- More poses (v1.10) ----------
+// Helpers shared by the new cues.
+const torsoTilt = (lm) => tiltFromVertical(mid(lm[L.lHip], lm[L.rHip]), mid(lm[L.lShoulder], lm[L.rShoulder]));
+const elbowAngle = (lm, s) => s === "l" ? angle(lm[L.lShoulder], lm[L.lElbow], lm[L.lWrist]) : angle(lm[L.rShoulder], lm[L.rElbow], lm[L.rWrist]);
+const SIDE = { l: { sh: L.lShoulder, el: L.lElbow, wr: L.lWrist, hip: L.lHip, knee: L.lKnee, ankle: L.lAnkle },
+               r: { sh: L.rShoulder, el: L.rElbow, wr: L.rWrist, hip: L.rHip, knee: L.rKnee, ankle: L.rAnkle } };
+// Feet apart compared with shoulder width (both measured across the picture).
+const stanceRatio = (lm) => Math.abs(lm[L.lAnkle].x - lm[L.rAnkle].x) / Math.max(1e-3, Math.abs(lm[L.lShoulder].x - lm[L.rShoulder].x));
+const frontLeg = (lm) => { const k = kneeAngles(lm); return k.l <= k.r ? "l" : "r"; };   // the more bent leg
+const other = (s) => s === "l" ? "r" : "l";
+// Per-side check helper: returns { ok, marks } with one mark per side.
+function perSide(groups, okFn) {
+  const okL = okFn("l"), okR = okFn("r");
+  return { ok: okL && okR, marks: [{ segs: groups.l, ok: okL }, { segs: groups.r, ok: okR }] };
+}
+const armsUp = (lm) => perSide(ARM, s => lm[SIDE[s].wr].y < lm[L.nose].y && elbowAngle(lm, s) > 150);
+const legsStraight = (lm, min) => { const k = kneeAngles(lm); return perSide(LEG, s => k[s] > min); };
+
+Object.assign(POSES, {
+  salute: {
+    name: "Upward Salute", sanskrit: "Urdhva Hastasana", say: "Upward salute", facing: "front",
+    desc: "Stand tall with your feet together and sweep both arms straight up overhead, palms facing, shoulders relaxed.",
+    cues: [
+      { label: "Arms straight up", test: (lm) => {
+          const r = perSide(ARM, s => lm[SIDE[s].wr].y < lm[L.nose].y && tiltFromVertical(lm[SIDE[s].sh], lm[SIDE[s].wr]) < 20);
+          return { ...r, msg: r.ok ? "Arms reaching straight up." : "Reach both arms straight up beside your ears." }; } },
+      { label: "Elbows straight", test: (lm) => {
+          const r = perSide(ARM, s => elbowAngle(lm, s) > 155);
+          return { ...r, msg: r.ok ? "Long arms." : "Straighten your elbows." }; } },
+      { label: "Spine tall & vertical", test: (lm) => {
+          const ok = torsoTilt(lm) < 10;
+          return { ok, msg: ok ? "Tall and lifted." : "Stand up straight — don't lean to one side.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Strong legs." : "Gently straighten your knees." }; } },
+    ]
+  },
+
+  sidebend: {
+    name: "Standing Side Bend", sanskrit: "Parsva Tadasana", say: "Standing side bend", facing: "front",
+    desc: "Feet together and arms overhead, lean your upper body over to one side in a long curve. Keep both feet grounded.",
+    cues: [
+      { label: "Arms overhead", test: (lm) => {
+          const r = perSide(ARM, s => lm[SIDE[s].wr].y < lm[L.nose].y);
+          return { ...r, msg: r.ok ? "Arms reaching overhead." : "Keep both arms reaching up overhead." }; } },
+      { label: "Side bend (12–40°)", test: (lm) => {
+          const t = torsoTilt(lm), ok = within(t, 12, 40);
+          return { ok, msg: ok ? "Lovely long side bend." : (t < 12 ? "Lean further over to one side." : "Come up a little — keep the bend long, not collapsed."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Hips level", test: (lm) => {
+          const ok = Math.abs(lm[L.lHip].y - lm[L.rHip].y) < 0.05;
+          return { ok, msg: ok ? "Hips steady." : "Keep your hips level — bend from the waist.", marks: [{ segs: HIPS, ok }] }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Feet grounded, legs strong." : "Straighten your legs." }; } },
+    ]
+  },
+
+  star: {
+    name: "Five-Pointed Star", sanskrit: "Utthita Tadasana", say: "Five pointed star", facing: "front",
+    desc: "Step your feet wide, legs straight, and reach your arms out and up in a wide V, like a star.",
+    cues: [
+      { label: "Feet wide apart", test: (lm) => {
+          const ok = stanceRatio(lm) > 1.6;
+          return { ok, msg: ok ? "Nice wide stance." : "Step your feet wider apart.", marks: [{ segs: LEG.l, ok }, { segs: LEG.r, ok }] }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Strong, straight legs." : "Straighten your knees." }; } },
+      { label: "Arms up and out in a V", test: (lm) => {
+          const r = perSide(ARM, s => { const a = SIDE[s];
+            return lm[a.wr].y < lm[a.sh].y && within(tiltFromHorizontal(lm[a.sh], lm[a.wr]), 15, 65) && elbowAngle(lm, s) > 150; });
+          return { ...r, msg: r.ok ? "Arms reaching wide." : "Reach your arms up and out in a wide V." }; } },
+      { label: "Torso upright", test: (lm) => {
+          const ok = torsoTilt(lm) < 10;
+          return { ok, msg: ok ? "Tall through the centre." : "Stack your chest over your hips.", marks: [{ segs: TORSO, ok }] }; } },
+    ]
+  },
+
+  goddess: {
+    name: "Goddess Pose", sanskrit: "Utkata Konasana", say: "Goddess pose", facing: "front",
+    desc: "Step wide with toes turned out, bend both knees to sink your hips, keep your chest upright, and bend your elbows to make cactus arms.",
+    cues: [
+      { label: "Both knees bent (~90°)", test: (lm) => {
+          const k = kneeAngles(lm);
+          const r = perSide(LEG, s => within(k[s], 80, 130));
+          return { ...r, msg: r.ok ? "Deep, strong squat." : (Math.max(k.l, k.r) > 130 ? "Bend both knees and sink your hips lower." : "Come up a little — keep the knees over the ankles.") }; } },
+      { label: "Feet wide apart", test: (lm) => {
+          const ok = stanceRatio(lm) > 1.8;
+          return { ok, msg: ok ? "Wide, steady base." : "Step your feet wider apart.", marks: [{ segs: LEG.l, ok }, { segs: LEG.r, ok }] }; } },
+      { label: "Cactus arms", test: (lm) => {
+          const r = perSide(ARM, s => { const a = SIDE[s];
+            return within(elbowAngle(lm, s), 60, 120) && lm[a.wr].y < lm[a.el].y && tiltFromHorizontal(lm[a.sh], lm[a.el]) < 25; });
+          return { ...r, msg: r.ok ? "Strong cactus arms." : "Lift your elbows to shoulder height, hands pointing up." }; } },
+      { label: "Torso upright", test: (lm) => {
+          const ok = torsoTilt(lm) < 12;
+          return { ok, msg: ok ? "Chest lifted." : "Keep your chest upright over your hips.", marks: [{ segs: TORSO, ok }] }; } },
+    ]
+  },
+
+  triangle: {
+    name: "Triangle Pose", sanskrit: "Trikonasana", say: "Triangle pose", facing: "front",
+    desc: "Wide stance, both legs straight. Reach over your front leg, then tip your torso sideways — lower hand to your shin, top arm straight up, arms in one line.",
+    cues: [
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Both legs long and straight." : "Straighten both legs — soft knees, not bent." }; } },
+      { label: "Feet wide apart", test: (lm) => {
+          const ok = stanceRatio(lm) > 1.8;
+          return { ok, msg: ok ? "Wide, steady base." : "Step your feet wider apart.", marks: [{ segs: LEG.l, ok }, { segs: LEG.r, ok }] }; } },
+      { label: "Torso tipped sideways", test: (lm) => {
+          const t = torsoTilt(lm), ok = within(t, 35, 80);
+          return { ok, msg: ok ? "Long sideways reach." : (t < 35 ? "Tip your torso further over the front leg." : "Lift your chest a little — keep both sides of the waist long."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Arms in one vertical line", test: (lm) => {
+          const r = perSide(ARM, s => tiltFromVertical(lm[SIDE[s].sh], lm[SIDE[s].wr]) < 25 && elbowAngle(lm, s) > 150);
+          return { ...r, msg: r.ok ? "Arms in one long line." : "Stack your arms — one reaching down, one straight up." }; } },
+    ]
+  },
+
+  sideangle: {
+    name: "Extended Side Angle", sanskrit: "Utthita Parsvakonasana", say: "Extended side angle", facing: "front",
+    desc: "From Warrior II, lean your torso over the bent front knee, bring the lower hand down inside the front foot, and reach the top arm over your ear in one line with the back leg.",
+    cues: [
+      { label: "Front knee bent (~90°)", test: (lm) => {
+          const f = frontLeg(lm), k = kneeAngles(lm)[f], ok = within(k, 80, 120);
+          return { ok, msg: ok ? "Strong front knee." : (k > 120 ? "Bend the front knee more toward 90°." : "Ease up — keep the knee over the ankle."),
+                   marks: [{ segs: LEG[f], ok }] }; } },
+      { label: "Back leg straight", test: (lm) => {
+          const b = other(frontLeg(lm)), ok = kneeAngles(lm)[b] > 155;
+          return { ok, msg: ok ? "Back leg long and strong." : "Straighten the back leg and press through the outer foot.", marks: [{ segs: LEG[b], ok }] }; } },
+      { label: "Torso over the front thigh", test: (lm) => {
+          const t = torsoTilt(lm), ok = within(t, 40, 80);
+          return { ok, msg: ok ? "Torso long over the front leg." : (t < 40 ? "Lean your torso further over the front knee." : "Lift your chest a little — don't collapse onto the thigh."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Top arm reaching over your ear", test: (lm) => {
+          const top = lm[L.lWrist].y < lm[L.rWrist].y ? "l" : "r", a = SIDE[top];
+          const ok = lm[a.wr].y < lm[a.sh].y && elbowAngle(lm, top) > 150 && within(tiltFromVertical(lm[a.sh], lm[a.wr]), 20, 75);
+          return { ok, msg: ok ? "Long line from back foot to fingertips." : "Reach the top arm up and over your ear.", marks: [{ segs: ARM[top], ok }] }; } },
+    ]
+  },
+
+  reverse: {
+    name: "Reverse Warrior", sanskrit: "Viparita Virabhadrasana", say: "Reverse warrior", facing: "front",
+    desc: "From Warrior II, keep the front knee bent, slide your back hand down the back leg and sweep the front arm up and back overhead.",
+    cues: [
+      { label: "Front knee bent (~90°)", test: (lm) => {
+          const f = frontLeg(lm), k = kneeAngles(lm)[f], ok = within(k, 80, 125);
+          return { ok, msg: ok ? "Front knee strong." : (k > 125 ? "Keep the front knee bent toward 90°." : "Ease up — keep the knee over the ankle."),
+                   marks: [{ segs: LEG[f], ok }] }; } },
+      { label: "Back leg straight", test: (lm) => {
+          const b = other(frontLeg(lm)), ok = kneeAngles(lm)[b] > 150;
+          return { ok, msg: ok ? "Back leg long." : "Straighten the back leg.", marks: [{ segs: LEG[b], ok }] }; } },
+      { label: "Front arm up and back", test: (lm) => {
+          const f = frontLeg(lm), ok = lm[SIDE[f].wr].y < lm[L.nose].y && elbowAngle(lm, f) > 150;
+          return { ok, msg: ok ? "Front arm reaching up and back." : "Sweep your front arm up overhead.", marks: [{ segs: ARM[f], ok }] }; } },
+      { label: "Leaning back over the back leg", test: (lm) => {
+          const b = other(frontLeg(lm));
+          const hm = mid(lm[L.lHip], lm[L.rHip]), sm = mid(lm[L.lShoulder], lm[L.rShoulder]);
+          const towardBack = Math.sign(sm.x - hm.x) === Math.sign(lm[SIDE[b].ankle].x - hm.x);
+          const t = torsoTilt(lm), ok = towardBack && within(t, 8, 45);
+          return { ok, msg: ok ? "Lovely lean over the back leg." : (towardBack && t > 45 ? "Ease up — keep the lean gentle." : "Lean your torso back over the back leg."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+    ]
+  },
+
+  chair: {
+    name: "Chair Pose", sanskrit: "Utkatasana", say: "Chair pose", facing: "side",
+    desc: "Feet together, bend your knees and sit your hips back as if into a chair, chest lifted, arms reaching up beside your ears.",
+    cues: [
+      { label: "Knees bent", test: (lm) => {
+          const k = kneeAngles(lm), avg = (k.l + k.r) / 2, ok = within(avg, 80, 135);
+          return { ok, msg: ok ? "Nice deep chair." : (avg > 135 ? "Bend your knees more and sit your hips back." : "Come up a little — keep your knees above your toes."),
+                   marks: [{ segs: LEG.l, ok }, { segs: LEG.r, ok }] }; } },
+      { label: "Torso leaning forward a little", test: (lm) => {
+          const t = torsoTilt(lm), ok = within(t, 15, 50);
+          return { ok, msg: ok ? "Chest lifted, torso long." : (t < 15 ? "Sit your hips back and lean forward slightly." : "Lift your chest — don't fold forward."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Arms reaching up", test: (lm) => {
+          const r = armsUp(lm);
+          return { ...r, msg: r.ok ? "Arms reaching up." : "Reach both arms up beside your ears." }; } },
+    ]
+  },
+
+  standfold: {
+    name: "Standing Forward Fold", sanskrit: "Uttanasana", say: "Standing forward fold", facing: "side",
+    desc: "Fold forward from the hips with your legs straight and let your head and arms hang down toward the floor. Bend your knees a little if you need to.",
+    cues: [
+      { label: "Deep fold (< 50°)", test: (lm) => {
+          const s = foldSide(lm), a = angle(lm[s.ankle], lm[s.hip], foldHead(lm, s));
+          foldHipAngle = a;
+          const ok = a < 50;
+          return { ok, msg: ok ? "Deep, relaxed fold." : "Fold further — let your chest come toward your thighs.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Head below the hips", test: (lm) => {
+          const s = foldSide(lm), ok = foldHead(lm, s).y > lm[s.hip].y + 0.05;
+          return { ok, msg: ok ? "Head hanging heavy." : "Let your head drop below your hips.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 150);
+          return { ...r, msg: r.ok ? "Legs long." : "Straighten your legs as much as is comfortable." }; } },
+    ]
+  },
+
+  lowlunge: {
+    name: "Low Lunge", sanskrit: "Anjaneyasana", say: "Low lunge", facing: "side",
+    desc: "Step one foot forward with the knee over the ankle, lower your back knee to the floor, lift your chest and reach both arms up.",
+    cues: [
+      { label: "Front knee bent (~90°)", test: (lm) => {
+          const f = frontLeg(lm), k = kneeAngles(lm)[f], ok = within(k, 75, 115);
+          return { ok, msg: ok ? "Front knee over the ankle." : (k > 115 ? "Bend the front knee more." : "Ease forward less — keep the knee over the ankle."),
+                   marks: [{ segs: LEG[f], ok }] }; } },
+      { label: "Back knee down", test: (lm) => {
+          const f = frontLeg(lm), b = other(f), ok = lm[SIDE[b].knee].y > lm[SIDE[f].knee].y + 0.08;
+          return { ok, msg: ok ? "Back knee resting down." : "Lower your back knee to the floor.", marks: [{ segs: LEG[b], ok }] }; } },
+      { label: "Chest lifted", test: (lm) => {
+          const ok = torsoTilt(lm) < 20;
+          return { ok, msg: ok ? "Chest lifted over the hips." : "Lift your chest up over your hips.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Arms reaching up", test: (lm) => {
+          const r = armsUp(lm);
+          return { ...r, msg: r.ok ? "Arms reaching high." : "Reach both arms up overhead." }; } },
+    ]
+  },
+
+  downdog: {
+    name: "Downward-Facing Dog", sanskrit: "Adho Mukha Svanasana", say: "Downward dog", facing: "side",
+    desc: "Hands and feet on the floor, lift your hips high to make an upside-down V. Arms and legs long, head between your arms.",
+    cues: [
+      { label: "Hips high (an upside-down V)", test: (lm) => {
+          const s = foldSide(lm), a = angle(lm[s.ankle], lm[s.hip], lm[s.shoulder]);
+          const ok = within(a, 50, 110) && lm[s.hip].y < lm[s.shoulder].y;
+          return { ok, msg: ok ? "Hips lifted high — a strong V." : "Lift your hips up and back toward the ceiling.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Long back, arms in line", test: (lm) => {
+          const s = foldSide(lm), ok = angle(lm[s.hip], lm[s.shoulder], lm[s.wrist]) > 145;
+          return { ok, msg: ok ? "Long line from hands to hips." : "Press your chest toward your thighs to lengthen your back.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Arms straight", test: (lm) => {
+          const r = perSide(ARM, s => elbowAngle(lm, s) > 150);
+          return { ...r, msg: r.ok ? "Strong arms." : "Straighten your arms and press the floor away." }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 150);
+          return { ...r, msg: r.ok ? "Legs long, heels reaching down." : "Straighten your legs — bend them only if your back rounds." }; } },
+    ]
+  },
+
+  plank: {
+    name: "Plank Pose", sanskrit: "Phalakasana", say: "Plank pose", facing: "side",
+    desc: "Hands under your shoulders, legs straight back, body in one straight line from head to heels.",
+    cues: [
+      { label: "Body low and long", test: (lm) => {
+          const s = foldSide(lm), ok = tiltFromHorizontal(lm[s.ankle], lm[s.shoulder]) < 35;
+          return { ok, msg: ok ? "Body long, close to level." : "Come down onto your hands — body nearly level with the floor.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "One straight line", test: (lm) => {
+          const s = foldSide(lm), sh = lm[s.shoulder], hp = lm[s.hip], an = lm[s.ankle];
+          const ok = angle(sh, hp, an) > 160;
+          const dx = an.x - sh.x, lineY = Math.abs(dx) > 1e-3 ? sh.y + (an.y - sh.y) * (hp.x - sh.x) / dx : hp.y;
+          return { ok, msg: ok ? "One long, straight line." : (hp.y > lineY ? "Lift your hips — don't let them sag." : "Lower your hips into one straight line."),
+                   marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Shoulders over wrists", test: (lm) => {
+          const r = perSide(ARM, s => tiltFromVertical(lm[SIDE[s].sh], lm[SIDE[s].wr]) < 20 && elbowAngle(lm, s) > 150);
+          return { ...r, msg: r.ok ? "Shoulders stacked over wrists." : "Stack your shoulders over your wrists, arms straight." }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Legs strong." : "Straighten your legs and press back through your heels." }; } },
+    ]
+  },
+
+  staff: {
+    name: "Staff Pose", sanskrit: "Dandasana", say: "Staff pose", facing: "side",
+    desc: "Sit with your legs straight out in front, feet flexed, spine tall, hands on the floor beside your hips.",
+    cues: [
+      { label: "Right angle at the hips", test: (lm) => {
+          const s = foldSide(lm), a = angle(lm[s.shoulder], lm[s.hip], lm[s.ankle]), ok = within(a, 70, 110);
+          return { ok, msg: ok ? "Sitting at a right angle." : "Sit down with your legs straight out in front.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Sitting tall", test: (lm) => {
+          const ok = torsoTilt(lm) < 15;
+          return { ok, msg: ok ? "Spine tall." : "Sit up tall — stack your shoulders over your hips.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Legs straight", test: (lm) => {
+          const r = legsStraight(lm, 160);
+          return { ...r, msg: r.ok ? "Legs long and active." : "Straighten your legs and flex your feet." }; } },
+    ]
+  },
+
+  boat: {
+    name: "Boat Pose", sanskrit: "Navasana", say: "Boat pose", facing: "side",
+    desc: "Sit, lean back a little and lift your legs so your body makes a V. Keep your chest open and reach your arms forward. Bent knees are fine.",
+    cues: [
+      { label: "Legs lifted", test: (lm) => {
+          const r = perSide(LEG, s => { const a = SIDE[s];
+            return lm[a.ankle].y < lm[a.hip].y && within(tiltFromHorizontal(lm[a.hip], lm[a.ankle]), 20, 70); });
+          return { ...r, msg: r.ok ? "Legs lifted." : "Lift your feet off the floor, shins up." }; } },
+      { label: "A V shape at the hips", test: (lm) => {
+          const s = foldSide(lm), a = angle(lm[s.shoulder], lm[s.hip], lm[s.ankle]), ok = within(a, 55, 110);
+          return { ok, msg: ok ? "Strong V shape." : "Lean back a little and lift your legs to make a V.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Chest lifted", test: (lm) => {
+          const ok = torsoTilt(lm) < 55;
+          return { ok, msg: ok ? "Chest open and lifted." : "Lift your chest — don't round back.", marks: [{ segs: TORSO, ok }] }; } },
+      { label: "Arms reaching forward", test: (lm) => {
+          const r = perSide(ARM, s => tiltFromHorizontal(lm[SIDE[s].sh], lm[SIDE[s].wr]) < 25 && elbowAngle(lm, s) > 150);
+          return { ...r, msg: r.ok ? "Arms reaching forward." : "Reach both arms forward, level with the floor." }; } },
+    ]
+  },
+});
+
+// Order used for menus and tiles: facing-the-camera poses, then side-on.
+const POSE_ORDER = ["mountain", "salute", "tree", "sidebend", "star", "goddess", "warrior2", "reverse", "sideangle", "triangle",
+                    "chair", "standfold", "fold", "warrior1", "lowlunge", "warrior3", "downdog", "plank", "staff", "boat"];
+for (const k of POSE_ORDER) { const v = POSES[k]; delete POSES[k]; POSES[k] = v; }
+
+// Side-view helpers (forward folds and other side-on poses): use whichever side the camera sees best.
 let foldHipAngle = null;
 function foldSide(lm) {
   const vis = (i) => lm[i].visibility ?? 1;
   const left = vis(L.lHip) + vis(L.lKnee) + vis(L.lAnkle) + vis(L.lShoulder);
   const right = vis(L.rHip) + vis(L.rKnee) + vis(L.rAnkle) + vis(L.rShoulder);
   return left >= right
-    ? { hip: L.lHip, ankle: L.lAnkle, shoulder: L.lShoulder, ear: L.lEar }
-    : { hip: L.rHip, ankle: L.rAnkle, shoulder: L.rShoulder, ear: L.rEar };
+    ? { hip: L.lHip, knee: L.lKnee, ankle: L.lAnkle, shoulder: L.lShoulder, elbow: L.lElbow, wrist: L.lWrist, ear: L.lEar }
+    : { hip: L.rHip, knee: L.rKnee, ankle: L.rAnkle, shoulder: L.rShoulder, elbow: L.rElbow, wrist: L.rWrist, ear: L.rEar };
 }
 function foldHead(lm, s) {
   return (lm[s.ear].visibility ?? 1) > 0.4 ? lm[s.ear] : lm[L.nose];
@@ -900,6 +1205,52 @@ const TEMPLATES = {
   fold: { side: true, head: [0.36, 0.41],
     sh: [[0.27, 0.44], [0.27, 0.44]], el: [[0.25, 0.27], [0.25, 0.27]], wr: [[0.22, 0.12], [0.22, 0.12]],
     hp: [[-0.02, 0.52], [-0.02, 0.52]], kn: [[0, 0.28], [0, 0.28]], an: [[0, 0.04], [0, 0.04]] },
+  // ---- v1.10 poses ----
+  salute: { side: false, head: [0, 0.93],
+    sh: [[-0.11, 0.82], [0.11, 0.82]], el: [[-0.12, 0.99], [0.12, 0.99]], wr: [[-0.12, 1.16], [0.12, 1.16]],
+    hp: [[-0.07, 0.52], [0.07, 0.52]], kn: [[-0.07, 0.28], [0.07, 0.28]], an: [[-0.07, 0.04], [0.07, 0.04]] },
+  sidebend: { side: false, head: [0.141, 0.905],          // leaning to screen-right
+    sh: [[0, 0.84], [0.206, 0.764]], el: [[0.085, 0.987], [0.291, 0.911]], wr: [[0.17, 1.134], [0.376, 1.058]],
+    hp: [[-0.07, 0.52], [0.07, 0.52]], kn: [[-0.07, 0.28], [0.07, 0.28]], an: [[-0.07, 0.04], [0.07, 0.04]] },
+  star: { side: false, head: [0, 0.87],
+    sh: [[-0.11, 0.76], [0.11, 0.76]], el: [[-0.23, 0.88], [0.23, 0.88]], wr: [[-0.35, 1.0], [0.35, 1.0]],
+    hp: [[-0.07, 0.46], [0.07, 0.46]], kn: [[-0.185, 0.25], [0.185, 0.25]], an: [[-0.30, 0.04], [0.30, 0.04]] },
+  goddess: { side: false, head: [0, 0.71],
+    sh: [[-0.11, 0.60], [0.11, 0.60]], el: [[-0.28, 0.60], [0.28, 0.60]], wr: [[-0.28, 0.77], [0.28, 0.77]],
+    hp: [[-0.08, 0.30], [0.08, 0.30]], kn: [[-0.30, 0.28], [0.30, 0.28]], an: [[-0.30, 0.04], [0.30, 0.04]] },
+  triangle: { side: false, head: [0.336, 0.685],          // front leg and lean to screen-right
+    sh: [[0.183, 0.712], [0.309, 0.532]], el: [[0.183, 0.882], [0.309, 0.362]], wr: [[0.183, 1.052], [0.309, 0.192]],
+    hp: [[-0.07, 0.45], [0.07, 0.45]], kn: [[-0.195, 0.245], [0.195, 0.245]], an: [[-0.32, 0.04], [0.32, 0.04]] },
+  sideangle: { side: false, head: [0.355, 0.565],         // bent knee and lean to screen-right
+    sh: [[0.205, 0.605], [0.315, 0.415]], el: [[0.338, 0.712], [0.315, 0.245]], wr: [[0.47, 0.82], [0.315, 0.075]],
+    hp: [[-0.07, 0.36], [0.07, 0.36]], kn: [[-0.235, 0.20], [0.31, 0.30]], an: [[-0.40, 0.04], [0.32, 0.04]] },
+  reverse: { side: false, head: [-0.174, 0.732],          // bent knee screen-right, leaning back to screen-left
+    sh: [[-0.227, 0.585], [-0.027, 0.679]], el: [[-0.26, 0.42], [-0.085, 0.839]], wr: [[-0.30, 0.26], [-0.143, 0.999]],
+    hp: [[-0.07, 0.36], [0.07, 0.36]], kn: [[-0.235, 0.20], [0.31, 0.30]], an: [[-0.40, 0.04], [0.32, 0.04]] },
+  chair: { side: true, head: [0.155, 0.756],
+    sh: [[0.092, 0.666], [0.092, 0.666]], el: [[0.164, 0.82], [0.164, 0.82]], wr: [[0.236, 0.974], [0.236, 0.974]],
+    hp: [[-0.08, 0.42], [-0.08, 0.42]], kn: [[0.12, 0.248], [0.12, 0.248]], an: [[0, 0.04], [0, 0.04]] },
+  standfold: { side: true, head: [0.147, 0.151],
+    sh: [[0.1, 0.25], [0.1, 0.25]], el: [[0.17, 0.12], [0.17, 0.12]], wr: [[0.25, 0.03], [0.25, 0.03]],
+    hp: [[-0.03, 0.52], [-0.03, 0.52]], kn: [[0, 0.28], [0, 0.28]], an: [[0, 0.04], [0, 0.04]] },
+  lowlunge: { side: true, head: [0.08, 0.71],
+    sh: [[0.07, 0.6], [0.07, 0.6]], el: [[0.08, 0.77], [0.08, 0.77]], wr: [[0.09, 0.94], [0.09, 0.94]],
+    hp: [[0.06, 0.3], [0.06, 0.3]], kn: [[-0.10, 0.08], [0.30, 0.28]], an: [[-0.33, 0.03], [0.30, 0.04]],
+    ft: [[-0.40, 0.02], [0.37, 0.01]] },
+  downdog: { side: true, head: [0.24, 0.17],
+    sh: [[0.205, 0.252], [0.205, 0.252]], el: [[0.333, 0.14], [0.333, 0.14]], wr: [[0.46, 0.028], [0.46, 0.028]],
+    hp: [[-0.02, 0.45], [-0.02, 0.45]], kn: [[-0.16, 0.245], [-0.16, 0.245]], an: [[-0.3, 0.04], [-0.3, 0.04]] },
+  plank: { side: true, head: [0.41, 0.29],
+    sh: [[0.304, 0.262], [0.304, 0.262]], el: [[0.304, 0.14], [0.304, 0.14]], wr: [[0.304, 0.02], [0.304, 0.02]],
+    hp: [[0.014, 0.184], [0.014, 0.184]], kn: [[-0.218, 0.122], [-0.218, 0.122]], an: [[-0.45, 0.06], [-0.45, 0.06]],
+    ft: [[-0.43, 0.01], [-0.43, 0.01]] },
+  staff: { side: true, head: [0.01, 0.48],
+    sh: [[0, 0.37], [0, 0.37]], el: [[0, 0.22], [0, 0.22]], wr: [[0.02, 0.07], [0.02, 0.07]],
+    hp: [[0, 0.08], [0, 0.08]], kn: [[0.24, 0.07], [0.24, 0.07]], an: [[0.48, 0.06], [0.48, 0.06]],
+    ft: [[0.5, 0.13], [0.5, 0.13]] },
+  boat: { side: true, head: [-0.264, 0.394],
+    sh: [[-0.193, 0.31], [-0.193, 0.31]], el: [[-0.02, 0.31], [-0.02, 0.31]], wr: [[0.15, 0.31], [0.15, 0.31]],
+    hp: [[0, 0.08], [0, 0.08]], kn: [[0.17, 0.25], [0.17, 0.25]], an: [[0.34, 0.42], [0.34, 0.42]] },
 };
 const HEAD_R = 0.065;
 const BONE_W = { upper: 0.07, fore: 0.06, thigh: 0.11, shin: 0.08, foot: 0.05, neck: 0.06,
@@ -1342,7 +1693,18 @@ function desiredFlip(lm) {
     case "warrior2": return sx(k.l < k.r ? L.lKnee : L.rKnee) < hipX;   // bent knee on the left
     case "warrior1": return sx(k.l < k.r ? L.lAnkle : L.rAnkle) < hipX; // front foot on the left
     case "warrior3":
-    case "fold":     return sx(L.nose) < hipX;                          // head on the left
+    case "fold":
+    case "standfold":
+    case "plank":    return sx(L.nose) < hipX;                          // head on the left
+    case "sideangle":
+    case "reverse":  return sx(k.l < k.r ? L.lKnee : L.rKnee) < hipX;   // bent knee on the left
+    case "lowlunge": return sx(k.l < k.r ? L.lAnkle : L.rAnkle) < hipX; // front foot on the left
+    case "triangle": return sx(lm[L.lWrist].y > lm[L.rWrist].y ? L.lWrist : L.rWrist) < hipX; // lower hand on the left
+    case "sidebend": return (sx(L.lShoulder) + sx(L.rShoulder)) / 2 < hipX;  // leaning to the left
+    case "chair":    return (sx(L.lKnee) + sx(L.rKnee)) / 2 < hipX;     // knees point left
+    case "downdog":  return (sx(L.lWrist) + sx(L.rWrist)) / 2 < hipX;   // hands on the left
+    case "staff":
+    case "boat":     return (sx(L.lAnkle) + sx(L.rAnkle)) / 2 < hipX;   // feet on the left
     default:         return false;
   }
 }
@@ -1386,13 +1748,21 @@ function updatePlacement(lm, T) {
   placeR = placeR == null ? r : placeR * 0.85 + r * 0.15;
   placeDx = placeDx == null ? dx : placeDx * 0.85 + dx * 0.15;
 }
-// The outline stands on the same floor as the user: its feet follow the user's lower ankle.
+// The outline stands on the same floor as the user: the user's lowest visible key point
+// (shoulders, elbows, wrists, hips, knees, ankles) lines up with the outline's lowest key point.
+// Standing poses: the ankles. Seated poses: the hips or ankles. Downward Dog: the wrists.
+const FLOOR_IDS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+function tplLowY(key) {
+  const p = tplPoints(key);
+  return Math.min(...[...p.sh, ...p.el, ...p.wr, ...p.hp, ...p.kn, ...p.an].map(q => q[1]));
+}
 function updateFloor(lm, T) {
   const H = canvas.height;
-  const vis = Math.max(lm[L.lAnkle].visibility ?? 1, lm[L.rAnkle].visibility ?? 1);
-  const ankY = Math.max(lm[L.lAnkle].y, lm[L.rAnkle].y) * H;
-  if (vis > 0.5 && ankY < H * 0.995) {
-    const target = ankY + 0.04 * T.s;
+  let low = -1;
+  for (const i of FLOOR_IDS) if ((lm[i].visibility ?? 1) > 0.5) low = Math.max(low, lm[i].y);
+  const lowY = low * H;
+  if (low >= 0 && lowY < H * 0.995) {
+    const target = lowY + tplLowY(currentPose) * T.s;
     floorY = floorY == null ? target : floorY * 0.9 + target * 0.1;
   }
 }
@@ -1588,7 +1958,7 @@ function drawSkeleton(lm, segState) {
     ctx.fill();
   });
 
-  const readout = (currentPose === "fold" && foldHipAngle != null) ? `hip ${foldHipAngle.toFixed(0)}°`
+  const readout = ((currentPose === "fold" || currentPose === "standfold") && foldHipAngle != null) ? `hip ${foldHipAngle.toFixed(0)}°`
     : currentPose === "warrior3" ? `${(90 - tiltDeg).toFixed(0)}° from level`
     : `${tiltDeg.toFixed(0)}°`;
   drawMirroredText(readout, (hipPx.x + shoulderPx.x) / 2 - W * 0.06, (hipPx.y + shoulderPx.y) / 2,
@@ -2096,14 +2466,21 @@ function renderHome() {
     seqListEl.appendChild(row);
   });
 }
-Object.entries(POSES).forEach(([key, p]) => {
+// Practise-one-pose tiles, in two groups: facing the camera, then side-on.
+for (const facing of ["front", "side"]) {
+  const h = document.createElement("div");
+  h.className = "tile-group";
+  h.innerHTML = (facing === "side" ? ICONS.side : ICONS.person) + "<span>" + (facing === "side" ? "Side-on" : "Facing the camera") + "</span>";
+  poseTilesEl.appendChild(h);
+  Object.entries(POSES).filter(([, p]) => p.facing === facing).forEach(([key, p]) => {
   const b = document.createElement("button");
   b.className = "pose-tile";
-  b.innerHTML = '<span class="ico">' + poseIconSVG(key) + '</span><span>' + shortName(key) + '</span><small>' + FACING_TEXT[p.facing].short + '</small>';
+  b.innerHTML = '<span class="ico">' + poseIconSVG(key) + '</span><span>' + shortName(key) + '</span>';
   b.setAttribute("aria-label", "Practise " + p.name + " (" + FACING_TEXT[p.facing].short.toLowerCase() + ")");
   b.addEventListener("click", () => { selectPose(key); enterSession(); });
   poseTilesEl.appendChild(b);
-});
+  });
+}
 (function greet() {
   const d = new Date(), h = d.getHours();
   $("greetWhen").textContent = d.toLocaleDateString(undefined, { weekday: "long" }) + " " +
@@ -2231,7 +2608,7 @@ addStepBtn.addEventListener("click", () => {
   saveRoutine(); renderSteps();
 });
 resetRoutineBtn.addEventListener("click", () => {
-  if (!confirm("Replace your sequence with the default one (all six poses — facing the camera first, then side-on)?")) return;
+  if (!confirm("Replace your sequence with the default one (six poses — facing the camera first, then side-on)?")) return;
   routine = defaultRoutine(); saveRoutine(); renderSteps();
 });
 beginBtn.addEventListener("click", startRoutine);

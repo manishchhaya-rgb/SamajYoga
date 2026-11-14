@@ -12,9 +12,9 @@ A browser-based yoga teacher. It watches you through your device's camera, shows
 | `SPEC.md` | The full specification. Anyone given only this file can rebuild the app. Its version number and history match the code. |
 | `README.md` | This page: status, how we work, and what's next. |
 
-## Current version: 1.9
+## Current version: 1.10
 
-- 6 poses: Mountain, Tree, Warrior II (facing the camera); Warrior I, Warrior III, Half Forward Fold (side-on).
+- **20 poses (1.10).** Facing the camera: Mountain, Upward Salute, Tree, Standing Side Bend, Five-Pointed Star, Goddess, Warrior II, Reverse Warrior, Extended Side Angle, Triangle. Side-on: Chair, Standing Forward Fold, Half Forward Fold, Warrior I, Low Lunge, Warrior III, Downward-Facing Dog, Plank, Staff, Boat.
 - **Pose outline:** each pose is drawn on the video as a see-through outline you step into; it turns green when you're inside it, and the app tells you to step back, come closer or move left/right.
 - **Facing prompts:** on screen and out loud — "Stand facing the camera" / "Stand side-on" — plus a warning if you're turned the wrong way.
 - **My sequence:** a default sequence of all six poses (front poses first, then side-on), shown as a queue in the corner of the camera view with the hold countdown; edit it from the ☰ side menu.
@@ -40,6 +40,7 @@ Then visit `http://localhost:8000/index.html`.
 
 ## Next steps
 
+- Test the 14 new poses (v1.10) with a real camera and tune their thresholds; floor/seated poses need the camera low and further back.
 - Test the v1.9 voice on phone and iPad: is the pacing right (5 s quiet gap, 1.5 s settle, 12 s repeat)?
 - Later: alignment-first coaching during long holds for experienced practitioners.
 - Still to tune with a real camera: outline size/position, the facing check, the side-on poses.
