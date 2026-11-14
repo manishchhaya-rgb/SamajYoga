@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.8 |
-| **Date** | 2026-10-05 |
-| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "v1.8: Studio Calm redesign — home and session screens for phone, iPad and laptop" |
+| **Spec version** | 1.9 |
+| **Date** | 2026-11-14 |
+| **Matches code** | `index.html` in `manishchhaya-rgb/SamajYoga`, commit "v1.9: calmer voice coach — one prompt at a time, time read-outs first" |
 | **Live URL** | https://manishchhaya-rgb.github.io/SamajYoga/ |
 
 **Purpose of this document:** anyone (or Claude) given only this file should be able to rebuild the app so it behaves the same. Every threshold, colour, message and timing that affects behaviour is listed here. It is updated with every change to the app, and the version number goes up each time.
@@ -21,7 +21,7 @@ SamajYoga is a "yoga teacher" that runs in a web browser. It uses the device's f
 - shows a checklist of alignment cues and a 0–100 **alignment score**;
 - runs a **hold timer** that counts only while fully aligned;
 - coaches the user through **My sequence** — a saved, editable list of poses with a hold time each (edited in a side menu; a default sequence of all six poses is provided);
-- **speaks** pose announcements, facing/placement prompts, corrections and encouragement (on by default).
+- **speaks** pose announcements, facing/placement prompts and corrections, then counts the time during a hold — one prompt at a time, never overlapping (on by default).
 
 Everything runs on the device. No video or data leaves the machine; only the pose model and library are downloaded once.
 
@@ -250,11 +250,11 @@ Each pose has an outline ("template") of the target shape **as seen on screen** 
 - **During a sequence:** the target is the current step's seconds (the − / + control is hidden).
 - "All ok" means every cue in the current pose passes on that frame.
 - The timer starts the first time all cues pass. After that it is **active** while the last all-ok frame was less than **0.6 s** ago (short tracking wobbles don't pause it). Time is added only while active; each frame adds at most 0.25 s.
-- **Voice** (only if voice coaching is on): once remaining time drops to 5 s or below while above 4 s, say "Five more seconds." once, but only if the target is ≥ 10 s. At 0 s, mark it done and say "Well done. Release the pose."
+- **Voice:** the time read-outs during a hold (start, every 10 s, "Five more seconds.", resume after a pause) are in §10. At 0 s, mark it done and say "Well done. Release the pose." (announcement priority, §10).
 - **Panel text** (§4.2): not started "Hold · starts when every line is green"; active "Holding — keep breathing"; paused "Hold · paused until all green"; done "Hold complete ✓" (green). Right-hand count "E of T s" (E = whole seconds held, capped at T); "T s" when done.
 - **Progress bar:** 8px, fill width = elapsed ÷ target, sage.
 - **Single-pose practice** shows the − / + target control; during a sequence it is hidden and "Skip pose ⏭" is shown instead.
-- **Reset** (elapsed back to 0, not started, not done) happens on: pose change, Stop, the "Restart hold" button, and changing the target. Reset also clears the voice "praise given" flag.
+- **Reset** (elapsed back to 0, not started, not done) happens on: pose change, Stop, the "Restart hold" button, and changing the target. Reset also clears the record of which time read-outs have been said and any pending "seconds to go".
 - When a hold completes, it notifies the sequence (§9a), which moves on if a sequence is running.
 
 ## 9a. My sequence
@@ -290,7 +290,7 @@ Total "6 poses · 1 min 50 s of holding".
 **Running:**
 - **Start** (Home "Begin practice" or the drawer's "Begin practice"): unlock speech (§10), mark active, clear the outline's floor position, hide the completion card, show the Session screen, go to step 1, and start the camera if it isn't running.
 - **Go to step i:** select that step's pose (resets the hold timer to the step's seconds and announces the pose — §10), then refresh the editor, Home card, progress bar and queue.
-- When a hold completes (the timer says "Well done. Release the pose."), wait **3 s**, then go to the next step. After the last step: say "Sequence complete. Great work.", mark inactive and finished, reset the hold timer, unlock editing, set the progress label to "Sequence complete" with every segment done, and show the **completion card** on the stage: a check-circle icon, "Practice complete", "N poses · {total} of holding" and a primary "Finish" button (returns Home). While it shows, the canvas shows only the video (no outline, skeleton or evaluation) and no voice prompts are spoken.
+- When a hold completes (the voice says "Well done. Release the pose."), wait **3 s**, then go to the next step. After the last step: say "Sequence complete. Great work.", mark inactive and finished, reset the hold timer, unlock editing, set the progress label to "Sequence complete" with every segment done, and show the **completion card** on the stage: a check-circle icon, "Practice complete", "N poses · {total} of holding" and a primary "Finish" button (returns Home). While it shows, the canvas shows only the video (no outline, skeleton or evaluation) and no voice prompts are spoken.
 - **Skip pose ⏭:** next step immediately (or finish on the last).
 - **End** (Session top bar) or **Finish**: stop the camera (which stops any sequence), clear the finished state, hide the completion card and return Home.
 - Choosing a single pose (Home tile) stops any sequence first. If the camera fails to start, the sequence is stopped (the Session screen stays, showing the error on the stage; End returns Home).
@@ -300,15 +300,55 @@ Total "6 poses · 1 min 50 s of holding".
 - **On by default.** The choice is saved in `localStorage` key `samajyoga.voice` ("on"/"off"; anything else = on). If the browser has no speech it is off. There is a round **voice button** in the top bar of both screens: a sage speaker-with-waves icon when on, a muted speaker-with-✕ when off; its `aria-label`/`title` is "Voice coaching on — tap to turn off" / "Voice coaching off — tap to turn on". Turning it on says "Voice coaching on. I'll guide your alignment."; turning it off cancels speech. No speech support → error "This browser doesn't support speech. Try the latest Chrome."
 - **Unlocking on phones/tablets:** tapping "Begin practice" (Home or drawer) or a pose tile immediately speaks a silent single-space utterance (volume 0) inside the tap, so later speech is allowed.
 - **Voice choice:** the first voice whose language matches en-US/GB/AU and whose name matches female|samantha|karen|serena|moira|tessa|google us english|zira; otherwise the first English voice; otherwise the first voice. Re-check when the voice list changes.
-- **Delivery:** rate **0.82**, pitch **0.78**, volume 1. Each new utterance cancels anything queued. All text is cleaned first: "°" → " degrees", "~" → "about ", brackets removed, whitespace collapsed.
-- **Pose announcement** (on every pose change, and when the camera starts): shows the facing card for **4 s** (§11a). If voice is on and the camera is running, say "{spoken name}. {Stand facing the camera. | Stand side-on to the camera.} {description} Step into the outline." While this plays, no corrections are spoken (it ends on the utterance's end/error event, or after 15 s at most); when it ends the "last spoke" time is set to now.
-- **Prompts** (only while running, not during an announcement), in priority order — the first that applies is the candidate:
-  1. **Facing wrong** (§11a): "Turn to face the camera." / "Turn side-on to the camera."
-  2. **Placement**, only while the hold timer isn't active, at most **2 times per pose**, when the smoothed size ratio r > 1.25 → "Step back a little, so you fit the outline."; r < 0.78 → "Come a little closer, so you fill the outline."; otherwise |dx| > 0.8 → dx > 0 "Move a little to your left." else "Move a little to your right."
-  3. **The first failing cue's message** (checklist order).
-  A different prompt needs ≥ **4 s** since the last speech; the same prompt repeats no sooner than **8 s**.
-- **Praise:** when there is no candidate, praise hasn't been given, and ≥ 1.5 s since the last speech: pick one of "Beautiful. Hold it there." / "That's it — lovely alignment." / "Perfect. Stay with the breath." / "Great posture. Hold and breathe." If the hold isn't finished, strip any trailing " Hold…"/" Stay…" sentence and append " Hold for N seconds." (N = remaining seconds, rounded up). Praise resets whenever a candidate appears.
-- Hold-timer speech ("Five more seconds.", "Well done. Release the pose.") is as in §9.
+- **Delivery:** rate **0.82**, pitch **0.78**, volume 1. All text is cleaned first: "°" → " degrees", "~" → "about ", brackets removed, whitespace collapsed.
+
+### 10.1 One voice channel and priorities
+
+There is only ever **one prompt playing**. Every prompt has a priority:
+
+| Priority | Prompts |
+|---|---|
+| 1 — cue | placement and alignment corrections |
+| 2 — facing | "Turn to face the camera." / "Turn side-on to the camera." |
+| 3 — time | hold read-outs (§10.3) |
+| 4 — announcement | pose announcement, "Well done. Release the pose.", "Sequence complete. Great work.", "Voice coaching on. I'll guide your alignment." |
+
+- **Is something playing?** The app tracks the current utterance itself: it is "speaking" from the moment a prompt is started until the utterance's end/error event — or, if a browser never fires that event, until an estimate of **1 s + 0.5 s per word** has passed. When it ends, the "last spoke" time is set.
+- **Rules when something is already playing:** an **announcement** stops a playing correction/facing/time prompt (cancel, then speak) or, if another announcement is playing, is queued straight after it. **Anything else is not spoken** — corrections are dropped (they will be retried by the normal rules), time read-outs are retried on the next frame until they go out of date (§10.3).
+- Ending the session, Stop and turning voice off cancel all speech.
+
+### 10.2 Pose announcement and corrections
+
+- **Pose announcement** (on every pose change, and when the camera starts): shows the facing card for **4 s** (§11a). If voice is on and the camera is running, say (announcement priority) "{spoken name}. {Stand facing the camera. | Stand side-on to the camera.} {description} Step into the outline."
+- **Corrections** are periodic, not continuous. The candidate each frame is the first that applies:
+  1. **Facing wrong** (§11a): "Turn to face the camera." / "Turn side-on to the camera." (facing priority)
+  2. **Placement**, at most **2 times per pose**, when the smoothed size ratio r > 1.25 → "Step back a little, so you fit the outline."; r < 0.78 → "Come a little closer, so you fill the outline."; otherwise |dx| > 0.8 → dx > 0 "Move a little to your left." else "Move a little to your right." (cue priority)
+  3. **The first failing cue's message** (checklist order). (cue priority)
+- A candidate is spoken only when **all** of these hold:
+  - the **hold timer is not active and not done** — while holding, only time read-outs speak (alignment is already all green while the timer runs, apart from the 0.6 s wobble allowance);
+  - the **same** candidate has been the top one continuously for **1.5 s** (brief tracking flickers never speak);
+  - **nothing is playing** and at least **5 s** have passed since the last prompt ended;
+  - it isn't the same line spoken less than **12 s** ago.
+- There is no separate praise prompt; the start-of-hold read-out carries the encouragement (§10.3).
+
+### 10.3 Time read-outs (time comes before alignment)
+
+During a hold (time priority), with T = the hold target and "left" = T − elapsed:
+
+| When | Says |
+|---|---|
+| The first time the hold becomes active (and left > 6 s) | one of "Lovely." / "Beautiful." / "That's it." / "Well aligned." + " Hold for N seconds." (N = left, rounded up) |
+| Holds over 20 s: each multiple of 10 from the largest one ≤ T − 5 down to 10, as left reaches it | "N seconds left." |
+| Holds of 10 s or more: left reaches 5 | "Five more seconds." |
+| The hold resumes after being paused **≥ 2 s** (and left > 6 s) | "Good. N seconds to go." |
+| left reaches 0 | "Well done. Release the pose." (announcement priority, §9) |
+
+Examples: 15 s hold → "Hold for 15 seconds." … "Five more seconds." … "Well done. Release the pose." 40 s hold → "Hold for 40 seconds.", "30 seconds left.", "20 seconds left.", "10 seconds left.", "Five more seconds.", "Well done…".
+
+- If a read-out can't be spoken because something is playing (e.g. the pose announcement is still going when the hold starts), it is tried again every frame. A mark read-out goes out of date once left is more than 2 s past its mark; the start and resume read-outs are dropped if left ≤ 6 s. Out-of-date read-outs are skipped silently.
+- Whenever a read-out is actually spoken, any mark due within the next **3 s** is marked as said, so two time prompts never come back to back.
+- Each read-out is said at most once per hold; the record is cleared when the hold resets (§9).
+- *Planned, not built:* for long holds and experienced practitioners, an option to let alignment corrections speak during the hold as well.
 
 ## 11. Overlay drawing (canvas matches the video's pixel size)
 
@@ -371,7 +411,8 @@ The outline and placement are guidance only: the score and hold timer still come
 5. Warrior III with the lifted leg dropped → only that leg is red; the message is "Lift the back leg up to hip height."
 6. Stepping out of a pose for about 2 s mid-hold → the timer shows "Paused…", then resumes from where it was. A 0.3 s tracking blip doesn't pause it.
 7. Changing a pose's timer to 20 s, reloading the page → it's still 20 s for that pose and 10 s for the others.
-8. With voice on, at full alignment → praise plus "Hold for N seconds", "Five more seconds", then "Well done. Release the pose."
+8. With voice on, a 15 s hold at full alignment → "Lovely. Hold for 15 seconds." (or another opener), "Five more seconds", then "Well done. Release the pose." A 40 s hold adds "30 / 20 / 10 seconds left." Two prompts never play over each other, and no correction is spoken while the timer is running.
+21. Out of position (not holding) → a correction is spoken only after the problem has lasted 1.5 s, at least 5 s after the previous prompt finished; the same correction doesn't repeat within 12 s. A 0.3 s tracking flicker mid-hold says nothing. Dropping out of the pose for 3 s mid-hold and coming back → "Good. N seconds to go."
 9. First visit: the Home screen shows "Your practice" and the default sequence (Mountain 15 s, Tree 20 s, Warrior II 20 s, a "Then turn side-on" divider, Warrior I 20 s, Warrior III 15 s, Half Forward Fold 20 s; "6 poses · 1 min 50 s of holding · one turn"). The menu button or "Edit" opens the side menu; edit the sequence there (seconds, reorder, delete, add), reload → the edits are still there and the Home card matches.
 10. Typing 999 seconds → it becomes 300; typing 2 → it becomes 5.
 11. "Begin practice" → the Session screen opens with "Pose 1 of N" and segments, editing is locked, the − / + control is hidden and the timer uses that step's seconds. When the hold completes → 3 s later the app moves to step 2. "Skip pose" works. After the last step → the "Practice complete" card; "Finish" returns Home and editing unlocks.
@@ -394,6 +435,7 @@ The outline and placement are guidance only: the score and hold timer still come
 - The design's fonts load from Google Fonts; offline, the app falls back to Georgia and the system sans font.
 - The outline uses fixed average body proportions; people with different proportions may not fit it exactly — it's a guide, while the score and timer come from the angle checks.
 - The facing check (shoulder width vs torso length) can be fooled by loose clothing or partial views; thresholds need real-camera tuning.
+- Voice prompts during a hold are time-only; corrections wait until the hold pauses. Alignment-first coaching for long holds / experienced practitioners is planned but not built.
 
 ## 15. Version history
 
@@ -408,3 +450,4 @@ The outline and placement are guidance only: the score and hold timer still come
 | 1.6 | 2026-10-05 | Simpler main screen: sequence editor and help moved to a ☰ side menu, read-only sequence strip + "Start sequence" on the main screen, coaching panel under the camera on phones; new default sequence (front poses then side-on, 15–20 s holds, new storage key); see-through target-pose outline on the video that the user steps into (scaled per sequence, stands on the user's floor, flips to match facing, turns green when inside) with step back/closer/left/right hints; facing-the-camera vs side-on prompts (card + voice + wrong-way detection); voice on by default and saved; pose icons; stage matches camera aspect; countdown moved to top-right; centre guide removed |
 | 1.7 | 2026-10-05 | Bolder outline (thicker edge, stronger fill, dark shadow, brighter colour); pose queue moved into the top-right corner of the camera view with the live hold countdown on the current pose (replaces the main-screen strip and the canvas countdown); compact queue on phones |
 | 1.8 | 2026-10-05 | "Studio Calm" redesign (chosen from three mock-ups): light stone/white/sage look with Fraunces + Manrope; separate Home screen (greeting, sequence card with turn divider, Begin practice, pose tiles, tips) and Session screen (End, progress segments, camera card, coach card with the one thing to do now, hold bar, checks); layouts for phone, iPad portrait, iPad landscape and laptop; white on-video overlays; completion card; icon voice button; updated skeleton colours |
+| 1.9 | 2026-11-14 | Calmer voice coach: one voice channel with priorities (corrections < facing < time < announcements) so prompts never overlap; corrections are periodic (must persist 1.5 s, 5 s quiet gap, 12 s before repeating) and silent while the hold timer runs; time read-outs take priority (start "Hold for N seconds", every 10 s on holds over 20 s, "Five more seconds", "N seconds to go" after a pause); separate praise prompt removed; help text updated |

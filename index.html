@@ -328,7 +328,7 @@
       <br><br><strong>Skeleton colours:</strong> every body line a pose checks is <span style="color:#C2410C">red</span> until that part is aligned, then turns <span style="color:var(--good-text)">green</span>.
       <br><br><strong>Hold timer:</strong> once every checked line is green the timer counts down. If you slip out of alignment it pauses and carries on when you're back in position.
       <br><br><strong>Your sequence:</strong> the app coaches each pose in turn and moves on 3 seconds after each hold. The default does the facing-the-camera poses first, then the side-on ones, so you only turn once.
-      <br><br><strong>Voice:</strong> on by default — it announces each pose and how to stand, then speaks the most important fix. Use the speaker button at the top to turn it off.
+      <br><br><strong>Voice:</strong> on by default — it announces each pose and how to stand, then gives one fix at a time, with a pause between. Once you're holding the pose it only counts the time. Use the speaker button at the top to turn it off.
       <br><br><strong>If the pose model won't download:</strong> some networks block it. Run a tiny local server: open a terminal in the folder with this file, run
       <code>python3 -m http.server 8000</code>, then visit <code>http://localhost:8000/index.html</code>.
     </div>
@@ -1164,7 +1164,7 @@ async function start() {
 function stop() {
   running = false;
   starting = false;
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  stopSpeech();
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = null;
   video.srcObject = null;
@@ -1597,20 +1597,32 @@ function drawSkeleton(lm, segState) {
 }
 
 // ---------- Voice coaching (Web Speech API — built in, offline) ----------
+// One voice channel, never two prompts at once. Each prompt has a priority:
+//   cue (alignment/placement) < facing < time read-out < announcement (pose intro, "release", finish).
+// Only announcements cut in (stopping a correction) or queue behind another announcement; anything
+// else is not said while something is playing (time read-outs retry next frame). Corrections are
+// periodic: they must persist, wait for a quiet gap, and never play while the hold timer is
+// running — during a hold, only time read-outs speak.
 const voiceBtns = document.querySelectorAll(".voice-btn");
 const VOICE_KEY = "samajyoga.voice";
 let voiceOn = true;
 try { voiceOn = localStorage.getItem(VOICE_KEY) !== "off"; } catch (e) {}
 if (!("speechSynthesis" in window)) voiceOn = false;
 let ttsVoice = null;
-let lastCueSpoken = "";
-let lastSpeakAt = 0;
-let praiseGiven = false;
-let introActive = false, introTimer = null;
-const SPEAK_INTERVAL = 4000;   // min gap between different prompts
-const REPEAT_INTERVAL = 8000;  // min gap before repeating the SAME prompt
+
+const PRI = { cue: 1, facing: 2, time: 3, announce: 4 };
+const QUIET_GAP_MS = 5000;     // silence needed after any prompt before a correction is spoken
+const REPEAT_MS = 12000;       // the same correction is not repeated sooner than this
+const SETTLE_MS = 1500;        // a correction must stay the top problem this long before it's spoken
+const RESUME_PAUSE_MS = 2000;  // a hold paused at least this long gets a "seconds to go" when it resumes
 const MAX_PLACEMENT_PROMPTS = 2;
-const PRAISES = ["Beautiful. Hold it there.", "That's it — lovely alignment.", "Perfect. Stay with the breath.", "Great posture. Hold and breathe."];
+const HOLD_STARTS = ["Lovely.", "Beautiful.", "That's it.", "Well aligned."];
+
+let speaking = null;           // { pri, until, id } while an utterance is (probably) playing
+let lastSpokeEnd = 0;          // when the last prompt finished
+let uttSeq = 0;
+let lastCueSpoken = "", lastCueAt = 0;
+let candidate = "", candidateSince = 0;
 
 function pickVoice() {
   if (!("speechSynthesis" in window)) return;
@@ -1634,15 +1646,44 @@ function cleanForSpeech(s) {
     .trim();
 }
 
-function speak(text, { interrupt = true, onend = null } = {}) {
-  if (!voiceOn || !("speechSynthesis" in window)) return;
-  if (interrupt) window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
+// True while something is being said. Uses the utterance's end event, with a time estimate
+// as a fallback in case a browser never fires it.
+function isSpeaking() {
+  if (!speaking) return false;
+  if (performance.now() > speaking.until) { lastSpokeEnd = speaking.until; speaking = null; return false; }
+  return true;
+}
+function stopSpeech() {
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  if (speaking) lastSpokeEnd = performance.now();
+  speaking = null;
+}
+
+// Say one prompt. Returns true if it was spoken (or queued), false if dropped.
+function say(text, pri, { onend = null } = {}) {
+  if (!voiceOn || !("speechSynthesis" in window)) return false;
+  const now = performance.now();
+  let startAt = now;
+  if (isSpeaking()) {
+    if (pri < PRI.announce) return false;                            // never talk over anything; caller retries
+    if (speaking.pri < PRI.announce) window.speechSynthesis.cancel(); // announcements cut off a correction
+    else startAt = speaking.until;                                   // …or wait for another announcement
+  }
+  const clean = cleanForSpeech(text);
+  const est = 1000 + clean.split(" ").length * 500;                  // ~2 words/s at rate 0.82
+  const u = new SpeechSynthesisUtterance(clean);
   if (ttsVoice) u.voice = ttsVoice;
   u.lang = (ttsVoice && ttsVoice.lang) || "en-US";
   u.rate = 0.82; u.pitch = 0.78; u.volume = 1.0;
-  if (onend) { u.onend = onend; u.onerror = onend; }
+  const id = ++uttSeq;
+  speaking = { pri: startAt > now ? Math.max(pri, speaking.pri) : pri, until: startAt + est, id };
+  const done = () => {
+    if (speaking && speaking.id === id) { speaking = null; lastSpokeEnd = performance.now(); }
+    if (onend) onend();
+  };
+  u.onend = done; u.onerror = done;
   window.speechSynthesis.speak(u);
+  return true;
 }
 // Phones only allow speech that starts from a tap; call this inside click handlers.
 function primeSpeech() {
@@ -1659,24 +1700,22 @@ function announcePose() {
   lastOverlayKey = "";
   if (!voiceOn || !running) return;
   const p = POSES[currentPose];
-  introActive = true;
-  clearTimeout(introTimer);
-  introTimer = setTimeout(() => { introActive = false; }, 15000);
-  speak(`${p.say}. ${FACING_TEXT[p.facing].speak} ${p.desc} Step into the outline.`, {
-    onend: () => { introActive = false; lastSpeakAt = performance.now(); }
-  });
+  say(`${p.say}. ${FACING_TEXT[p.facing].speak} ${p.desc} Step into the outline.`, PRI.announce);
 }
 
-function resetCoach() { lastCueSpoken = ""; lastSpeakAt = 0; praiseGiven = false; }
+function resetCoach() { lastCueSpoken = ""; lastCueAt = 0; candidate = ""; candidateSince = 0; }
 
-// Spoken prompts in priority order: facing the wrong way → not in the outline → first failing cue.
+// Corrections, in priority order: facing the wrong way → not in the outline → first failing cue.
+// Spoken only when: the hold isn't running, nothing else is being said, the same problem has
+// persisted for SETTLE_MS, and QUIET_GAP_MS has passed since the last prompt.
 function coach(results) {
-  if (!voiceOn || !running || introActive || !doneCard.hidden) return;
+  if (!voiceOn || !running || !doneCard.hidden) return;
+  if (holdActive || holdDone) { candidate = ""; return; }   // holding: time read-outs only
   const now = performance.now();
-  let line = null, isPlacement = false;
+  let line = null, pri = PRI.cue, isPlacement = false;
   if (orientWrong) {
-    line = FACING_TEXT[POSES[currentPose].facing].fixSpeak;
-  } else if (!holdActive && placementSaid < MAX_PLACEMENT_PROMPTS && placeR != null &&
+    line = FACING_TEXT[POSES[currentPose].facing].fixSpeak; pri = PRI.facing;
+  } else if (placementSaid < MAX_PLACEMENT_PROMPTS && placeR != null &&
              (placeR > 1.25 || placeR < 0.78 || Math.abs(placeDx) > 0.8)) {
     isPlacement = true;
     line = placeR > 1.25 ? "Step back a little, so you fit the outline."
@@ -1686,22 +1725,14 @@ function coach(results) {
     const firstFail = results.find(r => !r.ok);
     if (firstFail) line = cleanForSpeech(firstFail.msg);
   }
-  if (line) {
-    praiseGiven = false;
-    const isSame = line === lastCueSpoken;
-    const gap = now - lastSpeakAt;
-    if ((!isSame && gap > SPEAK_INTERVAL) || (isSame && gap > REPEAT_INTERVAL)) {
-      speak(line);
-      lastCueSpoken = line;
-      lastSpeakAt = now;
-      if (isPlacement) placementSaid++;
-    }
-  } else if (!praiseGiven && now - lastSpeakAt > 1500) {
-    const p = PRAISES[Math.floor(Math.random() * PRAISES.length)];
-    speak(holdDone ? p : p.replace(/ Hold.*$| Stay.*$/, "") + " Hold for " + Math.ceil(holdTarget() - holdElapsed) + " seconds.");
-    praiseGiven = true;
-    lastCueSpoken = "";
-    lastSpeakAt = now;
+  if (!line) { candidate = ""; return; }
+  if (line !== candidate) { candidate = line; candidateSince = now; return; }
+  if (now - candidateSince < SETTLE_MS) return;
+  if (isSpeaking() || now - lastSpokeEnd < QUIET_GAP_MS) return;
+  if (line === lastCueSpoken && now - lastCueAt < REPEAT_MS) return;
+  if (say(line, pri)) {
+    lastCueSpoken = line; lastCueAt = now;
+    if (isPlacement) placementSaid++;
   }
 }
 
@@ -1725,10 +1756,9 @@ function toggleVoice() {
   if (voiceOn) {
     pickVoice();
     resetCoach();
-    speak("Voice coaching on. I'll guide your alignment.");
+    say("Voice coaching on. I'll guide your alignment.", PRI.announce);
   } else {
-    window.speechSynthesis.cancel();
-    introActive = false;
+    stopSpeech();
   }
 }
 voiceBtns.forEach(b => b.addEventListener("click", toggleVoice));
@@ -1743,7 +1773,9 @@ const holdStatus = document.getElementById("holdStatus");
 let holdTargets = {};
 try { holdTargets = JSON.parse(localStorage.getItem("samajyoga.holdTargets") || "{}") || {}; } catch (e) { holdTargets = {}; }
 let holdElapsed = 0, holdStarted = false, holdDone = false, holdActive = false;
-let lastHoldTick = null, lastAlignedAt = 0, fiveSecSaid = false;
+let lastHoldTick = null, lastAlignedAt = 0;
+// Time read-outs already given during this hold ("start", 20, 10, 5…), and a pending "seconds to go" after a pause.
+let timeSaid = new Set(), resumePending = false;
 
 function holdTarget() {
   if (routineActive && routine[routineIndex]) return routine[routineIndex].secs;
@@ -1757,7 +1789,7 @@ function setHoldTarget(sec) {
 }
 function resetHold() {
   holdElapsed = 0; holdStarted = false; holdDone = false; holdActive = false;
-  lastHoldTick = null; fiveSecSaid = false; praiseGiven = false;
+  lastHoldTick = null; timeSaid = new Set(); resumePending = false;
   renderHold();
 }
 const holdCountEl = $("holdCount"), holdCfgEl = $("holdCfg"), skipBtn = $("skipBtn");
@@ -1784,24 +1816,64 @@ function updateHold(allOk) {
   const dt = lastHoldTick == null ? 0 : Math.min((now - lastHoldTick) / 1000, 0.25);
   lastHoldTick = now;
   if (holdDone) return;
-  if (allOk) { lastAlignedAt = now; holdStarted = true; }
+  const wasActive = holdActive;
+  if (allOk) {
+    if (holdStarted && !wasActive && now - lastAlignedAt >= RESUME_PAUSE_MS) resumePending = true;
+    lastAlignedAt = now; holdStarted = true;
+  }
   holdActive = holdStarted && now - lastAlignedAt < 600;   // brief tracking wobbles don't pause the clock
   if (holdActive) {
     holdElapsed += dt;
     const left = holdTarget() - holdElapsed;
-    if (!fiveSecSaid && holdTarget() >= 10 && left <= 5 && left > 4) {
-      fiveSecSaid = true;
-      speak("Five more seconds.");
-      lastSpeakAt = now;
-    }
     if (left <= 0) {
       holdDone = true; holdActive = false;
-      speak("Well done. Release the pose.");
-      lastSpeakAt = now;
+      say("Well done. Release the pose.", PRI.announce);
       onHoldComplete();
+    } else {
+      holdVoice(left);
     }
   }
   renderHold();
+}
+
+// Time read-outs while holding. They take priority over corrections (which are silent during a hold).
+// Marks: at the start "Hold for N seconds."; for holds over 20 s, every 10 s ("N seconds left.");
+// for holds of 10 s or more, "Five more seconds."; then "Well done. Release the pose." (in updateHold).
+// A read-out that couldn't be said because something more important was playing is tried again
+// on the next frame, and skipped once it's out of date.
+function holdMarks(T) {
+  const m = [];
+  if (T > 20) for (let x = Math.floor((T - 5) / 10) * 10; x >= 10; x -= 10) m.push(x);
+  if (T >= 10) m.push(5);
+  return m;
+}
+function holdVoice(left) {
+  const T = holdTarget(), secs = Math.ceil(left);
+  let key = null, text = null;
+  if (!timeSaid.has("start")) {
+    key = "start";
+    if (left > 6) {
+      const intro = HOLD_STARTS[Math.floor(Math.random() * HOLD_STARTS.length)];
+      text = `${intro} Hold for ${secs} seconds.`;
+    }
+    resumePending = false;
+  } else if (resumePending) {
+    key = "resume";
+    if (left > 6) text = `Good. ${secs} seconds to go.`;
+  } else {
+    for (const m of holdMarks(T)) {
+      if (timeSaid.has(m) || left > m) continue;
+      key = m;
+      if (left > m - 2) text = m === 5 ? "Five more seconds." : `${m} seconds left.`;
+      break;
+    }
+  }
+  if (key == null) return;
+  if (!text || say(text, PRI.time)) {
+    if (key === "resume") resumePending = false; else timeSaid.add(key);
+    // a spoken read-out covers any mark due in the next 3 s, so two never come back to back
+    if (text) for (const m of holdMarks(T)) if (m >= left - 3) timeSaid.add(m);
+  }
 }
 const holdMinusBtn = document.getElementById("holdMinus"), holdPlusBtn = document.getElementById("holdPlus");
 holdMinusBtn.addEventListener("click", () => setHoldTarget(holdTarget() - HOLD_STEP));
@@ -2133,8 +2205,7 @@ function stopRoutine() {
 function finishRoutine() {
   clearTimeout(routineTimer);
   routineActive = false; routineFinished = true;
-  speak("Sequence complete. Great work.");
-  lastSpeakAt = performance.now();
+  say("Sequence complete. Great work.", PRI.announce);
   resetHold();
   renderSteps();
   renderProgress();
